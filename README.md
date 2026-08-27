@@ -279,3 +279,37 @@ graph TD
 
 5. **Launch the Frontend**
    Open `frontend/index.html` via a local live server (e.g., VS Code Live Server) or host it using any static file server.
+
+### Run the Intent Analyzer Agent
+
+Run this from the repository root after installing the backend requirements and creating `backend/.env`:
+
+```powershell
+python -c "from backend.app.agents.intent_analyzer_agent import create_intent_analyzer_agent; agent = create_intent_analyzer_agent(provider='gemini'); print(agent.analyze('Teach me binary search in Python').model_dump_json(indent=2))"
+```
+
+The agent reads `GEMINI_API_KEY` and the optional `GEMINI_API_KEY_FALLBACK_1` from `backend/.env`. It accepts any non-empty string query through `agent.analyze(query)` and returns an `IntentAnalysis` model. Use `result.model_dump()` for a Python dictionary or `result.model_dump_json(indent=2)` for JSON. `provider='groq'` and `provider='openai'` are also supported when their corresponding settings and provider dependencies are configured.
+
+Example output shape:
+
+```json
+{
+    "domain": "computer science",
+    "subdomain": "algorithms",
+    "topic": "binary search",
+    "subtopics": ["sorted arrays"],
+    "modules": ["algorithm", "complexity"],
+    "roadmap": ["explain", "implement", "practice"],
+    "deliverables": ["worked example"],
+    "degree_of_explanation": "detailed",
+    "audience": "beginner",
+    "learning_objectives": ["implement binary search"],
+    "assumptions": []
+}
+```
+
+Run the agent tests without making an API request:
+
+```powershell
+python -m unittest backend.test.test_intent_analyzer_agent -v
+```
