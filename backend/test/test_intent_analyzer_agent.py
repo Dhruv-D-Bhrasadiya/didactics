@@ -80,6 +80,18 @@ class IntentAnalyzerAgentTests(unittest.TestCase):
 		with self.assertRaises(ValueError):
 			agent.analyze("Explain it")
 
+	def test_last_rotatable_error_is_reraised(self):
+		agent = IntentAnalyzerAgent(
+			"test-model",
+			["first", "second"],
+			lambda key, _model: FakeLLM(error=RuntimeError(f"429 quota exceeded: {key}")),
+		)
+
+		with self.assertRaisesRegex(RuntimeError, "second"):
+			agent.analyze("Explain it")
+
+		self.assertEqual(agent.current_key_index, 1)
+
 	def test_rejects_empty_query_and_keys(self):
 		with self.assertRaises(ValueError):
 			IntentAnalyzerAgent("test-model", [], lambda *_: FakeLLM())
