@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     groq_api_key_fallback_1: SecretStr | None = None 
     openai_api_key: SecretStr | None = None
 
+    # Model Selection Defaults
+    default_provider: str = "gemini"
+    gemini_model: str = "gemini-3.6-flash"
+    groq_model: str = "qwen/qwen3.8-27b"
+    openai_model: str = "gpt-4o-mini"
+
     model_config = SettingsConfigDict(
         env_file="backend/.env",
         env_file_encoding="utf-8",

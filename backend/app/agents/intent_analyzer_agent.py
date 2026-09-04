@@ -47,27 +47,30 @@ class IntentAnalyzerAgent(BaseAgent):
 
 
 def create_intent_analyzer_agent(
-    provider: str = "gemini",
+    provider: str | None = None,
     model_name: str | None = None,
     app_settings: Settings | None = None,
 ) -> IntentAnalyzerAgent:
     """Create an analyzer from application settings without making a network call."""
     app_settings = app_settings or get_settings()
-    provider = provider.lower()
+
+    # Fallback to globally defined provider if not passed explicitly
+    provider = (provider or app_settings.default_provider).lower()
+
     provider_config = {
         "gemini": (
             _build_gemini_llm,
-            "gemini-3.6-flash",
+            app_settings.gemini_model,
             (app_settings.gemini_api_key, app_settings.gemini_api_key_fallback_1),
         ),
         "groq": (
             _build_groq_llm,
-            "llama-3.3-70b-versatile",
+            app_settings.groq_model,
             (app_settings.groq_api_key, app_settings.groq_api_key_fallback_1),
         ),
         "openai": (
             _build_openai_llm,
-            "gpt-4o-mini",
+            app_settings.openai_model,
             (app_settings.openai_api_key,),
         ),
     }
