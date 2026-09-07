@@ -1,204 +1,210 @@
+# Didactics — System Architecture
+
 ```mermaid
-graph TD
-
-    %% =========================
-    %% STYLING
-    %% =========================
-    classDef client fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#000;
-    classDef gateway fill:#FFF3E0,stroke:#EF6C00,stroke-width:2px,color:#000;
-    classDef storage fill:#EDE7F6,stroke:#5E35B1,stroke-width:2px,color:#000;
+graph TB
+    classDef user fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#000;
+    classDef api fill:#FFF3E0,stroke:#EF6C00,stroke-width:2px,color:#000;
+    classDef orchestrator fill:#E8EAF6,stroke:#3949AB,stroke-width:2px,color:#000;
     classDef agent fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#000;
-    classDef validation fill:#FFFDE7,stroke:#F9A825,stroke-width:2px,color:#000;
-    classDef engine fill:#FCE4EC,stroke:#C2185B,stroke-width:2px,color:#000;
-    classDef output fill:#E0F2F1,stroke:#00695C,stroke-width:2px,color:#000;
-    classDef error fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#000;
+    classDef artifact fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px,color:#000;
+    classDef validator fill:#FFF8E1,stroke:#F9A825,stroke-width:2px,color:#000;
+    classDef tool fill:#FCE4EC,stroke:#C2185B,stroke-width:2px,color:#000;
+    classDef storage fill:#ECEFF1,stroke:#455A64,stroke-width:2px,color:#000;
+    classDef note fill:#FAFAFA,stroke:#757575,stroke-dasharray:5 5,color:#333;
 
-    %% =========================
-    %% CLIENT LAYER
-    %% =========================
-    User([User Client UI]):::client
-    VideoPlayer([Final Explainer Video]):::output
+    User([Learner / User]):::user
 
-    %% =========================
-    %% API / BACKEND
-    %% =========================
-    FastAPI[FastAPI API Gateway]:::gateway
-    Request[Request Manager]:::gateway
-    Cache[(Redis Cache)]:::storage
-    MySQL[(MySQL Database)]:::storage
-
-    %% =========================
-    %% LANGGRAPH ORCHESTRATOR
-    %% =========================
-    subgraph LangGraph["LangGraph Multi-Agent Orchestrator"]
-
-        State["Shared Workflow State"]:::agent
-
-        subgraph Planning["1. Planning Agents"]
-            Intent[Intent Analyzer Agent<br/>Identify user goal]:::agent
-            Topic[Topic Decomposer Agent<br/>Extract concepts & problems]:::agent
-            Structure[Chapter Planner Agent<br/>Create video chapters]:::agent
-            Learning[Learning Objective Agent<br/>Define teaching outcomes]:::agent
-        end
-
-        subgraph Content["2. Educational Content Agents"]
-            Concept[Concept Explanation Agent<br/>Write conceptual explanation]:::agent
-            Algorithm[Algorithm Agent<br/>Design step-by-step solution]:::agent
-            Example[Example Agent<br/>Create examples & edge cases]:::agent
-            DryRun[Dry Run Agent<br/>Generate execution trace]:::agent
-        end
-
-        subgraph Visual["3. Visual Planning Agents"]
-            VisualPlanner[Visual Planner Agent<br/>Map concepts to visuals]:::agent
-            ManimPlanner[Manim Scene Agent<br/>Design animation scenes]:::agent
-            CodeVisual[Code Visualization Agent<br/>Design code highlighting]:::agent
-            Timing[Timing Agent<br/>Estimate scene durations]:::agent
-        end
-
-        subgraph Generation["4. Generation Agents"]
-            Script[Manim Code Generator Agent<br/>Generate Python animation code]:::agent
-            Narration[Narration Agent<br/>Generate voiceover script]:::agent
-            Subtitle[Subtitle Agent<br/>Generate subtitle timeline]:::agent
-        end
-
-        subgraph Quality["5. Validation Agents"]
-            Syntax[Syntax Validator Agent<br/>Check Python syntax]:::validation
-            Safety[Safety Validator Agent<br/>Check unsafe operations]:::validation
-            VisualTest[Animation Test Agent<br/>Validate Manim scenes]:::validation
-            ContentTest[Content Validator Agent<br/>Check correctness]:::validation
-            SyncTest[Sync Validator Agent<br/>Check audio/visual timing]:::validation
-        end
-
-        subgraph Recovery["6. Recovery / Refinement"]
-            CodeFix[Code Repair Agent<br/>Fix rendering errors]:::error
-            ContentFix[Content Refinement Agent<br/>Fix educational issues]:::error
-            TimingFix[Timing Correction Agent<br/>Fix synchronization]:::error
-        end
+    subgraph API["Application Boundary"]
+        Gateway[FastAPI API Gateway]:::api
+        RequestMgr[Job / Request Manager]:::api
+        ResultAPI[Result / Video Delivery API]:::api
     end
 
-    %% =========================
-    %% ASSET GENERATION PIPELINE
-    %% =========================
-    subgraph Execution["Asset Generation Pipeline"]
+    User -->|Natural-language learning request| Gateway
+    Gateway --> RequestMgr
+    ResultAPI -->|Video URL + metadata + status| User
 
-        TTS[TTS Engine<br/>Generate Voiceover Audio]:::engine
-        Manim[Manim Rendering Engine<br/>Render Animation Frames]:::engine
-        FFmpeg[FFmpeg Processor<br/>Combine Audio + Video]:::engine
-        Subtitles[Subtitle Processor<br/>Burn / Attach Subtitles]:::engine
-        Thumbnail[Thumbnail Generator]:::engine
+    subgraph Persistence["Persistence & Caching"]
+        Cache[(Redis / Cache)]:::storage
+        DB[(MySQL / Persistent Metadata)]:::storage
+        ObjectStore[(Rendered Asset Store)]:::storage
     end
 
-    %% =========================
-    %% INPUT FLOW
-    %% =========================
-    User -->|1. Submit Prompt| FastAPI
-    FastAPI -->|2. Create Job| Request
-    Request -->|3. Check Existing Result| Cache
+    RequestMgr -->|Lookup existing job / cache key| Cache
+    Cache -->|Cache hit| ResultAPI
+    RequestMgr -->|Create job + initial state| DB
+    ResultAPI --> DB
+    ResultAPI --> ObjectStore
 
-    Cache -->|Cache Hit| VideoPlayer
-    Cache -->|Cache Miss| State
+    subgraph Graph["LangGraph Workflow / Shared State"]
+        State[[Workflow State]]:::orchestrator
+        Router{Workflow Router}:::orchestrator
+        Checkpoint[(Checkpoint / Run State)]:::storage
+    end
 
-    %% =========================
-    %% PLANNING FLOW
-    %% =========================
-    State --> Intent
-    Intent --> Topic
-    Topic --> Structure
-    Structure --> Learning
+    RequestMgr -->|Cache miss / new generation job| State
+    State --> Router
+    State <--> Checkpoint
 
-    Learning --> Concept
-    Learning --> Algorithm
-    Learning --> Example
-    Learning --> DryRun
+    subgraph S1["Stage 1 — Request Understanding"]
+        Intent[Intent Analyzer Agent\nClassify learning request]:::agent
+        Scope[Scope & Requirements Agent\nResolve depth, audience, constraints]:::agent
+        ContentMap[Topic / Concept Mapper\nBuild concept inventory]:::agent
+    end
 
-    %% =========================
-    %% CONTENT → VISUAL FLOW
-    %% =========================
-    Concept --> VisualPlanner
-    Algorithm --> VisualPlanner
-    Example --> VisualPlanner
-    DryRun --> VisualPlanner
+    Router --> Intent
+    Intent --> Scope
+    Scope --> ContentMap
+    ContentMap -->|Structured learning specification| State
 
-    VisualPlanner --> ManimPlanner
-    VisualPlanner --> CodeVisual
-    VisualPlanner --> Timing
+    subgraph S2["Stage 2 — Pedagogical Planning"]
+        Curriculum[Lesson / Chapter Planner\nOrder concepts and dependencies]:::agent
+        Objective[Learning Objective Agent\nDefine measurable outcomes]:::agent
+        ExamplePlan[Example & Exercise Planner\nSelect demonstrations / edge cases]:::agent
+    end
 
-    %% =========================
-    %% GENERATION FLOW
-    %% =========================
-    ManimPlanner --> Script
-    CodeVisual --> Script
+    State --> Curriculum
+    State --> Objective
+    State --> ExamplePlan
+    Curriculum --> Objective
+    Objective --> ExamplePlan
+    ExamplePlan -->|Lesson plan + examples + objectives| State
 
-    Concept --> Narration
-    Algorithm --> Narration
-    Example --> Narration
-    DryRun --> Narration
+    subgraph S3["Stage 3 — Educational Content"]
+        Explanation[Concept Explanation Agent\nDraft explanatory content]:::agent
+        Algorithm[Algorithm / Procedure Agent\nDerive step-by-step procedure]:::agent
+        WorkedExample[Worked Example Agent\nGenerate concrete walkthrough]:::agent
+        Trace[Execution Trace Agent\nProduce state-by-state trace]:::agent
+        ContentArtifact[[Educational Content Artifact]]:::artifact
+    end
 
-    Timing --> Narration
-    Timing --> Subtitle
+    State --> Explanation
+    State --> Algorithm
+    State --> WorkedExample
+    State --> Trace
+    Explanation --> ContentArtifact
+    Algorithm --> ContentArtifact
+    WorkedExample --> ContentArtifact
+    Trace --> ContentArtifact
+    ContentArtifact --> State
 
-    Script --> Syntax
-    Script --> Safety
+    subgraph S4["Stage 4 — Visual & Scene Planning"]
+        VisualPlanner[Visual Planner Agent\nMap content to visual representations]:::agent
+        ScenePlanner[Scene / Manim Planner\nDefine ordered animation scenes]:::agent
+        CodeVisualPlanner[Code Visualization Planner\nDefine highlighting / state changes]:::agent
+        TimingPlanner[Timing Planner\nEstimate durations and anchors]:::agent
+        Storyboard[[Storyboard + Timing Plan]]:::artifact
+    end
 
-    Narration --> ContentTest
-    Subtitle --> SyncTest
+    ContentArtifact --> VisualPlanner
+    ContentArtifact --> TimingPlanner
+    VisualPlanner --> ScenePlanner
+    VisualPlanner --> CodeVisualPlanner
+    TimingPlanner --> ScenePlanner
+    TimingPlanner --> CodeVisualPlanner
+    ScenePlanner --> Storyboard
+    CodeVisualPlanner --> Storyboard
+    Storyboard --> State
 
-    %% =========================
-    %% VALIDATION FLOW
-    %% =========================
-    Syntax -->|Approved| VisualTest
-    Syntax -->|Failed| CodeFix
+    subgraph S5["Stage 5 — Generation"]
+        ManimGen[Manim Code Generator Agent\nGenerate deterministic animation script]:::agent
+        NarrationGen[Narration Agent\nGenerate voiceover script]:::agent
+        SubtitleGen[Subtitle / Caption Planner\nCreate caption segments]:::agent
+        GenerationSet[[Code + Narration + Subtitle Artifacts]]:::artifact
+    end
 
-    Safety -->|Approved| VisualTest
-    Safety -->|Failed| CodeFix
+    Storyboard --> ManimGen
+    ContentArtifact --> NarrationGen
+    Storyboard --> NarrationGen
+    Storyboard --> SubtitleGen
+    NarrationGen --> SubtitleGen
+    ManimGen --> GenerationSet
+    NarrationGen --> GenerationSet
+    SubtitleGen --> GenerationSet
+    GenerationSet --> State
 
-    ContentTest -->|Approved| SyncTest
-    ContentTest -->|Failed| ContentFix
+    subgraph S6["Stage 6 — Validation Gates"]
+        SchemaCheck[Schema / Contract Validator\nValidate structured artifacts]:::validator
+        CodeCheck[Python / Manim Static Validator\nCheck syntax and policy]:::validator
+        RenderTest[Render Smoke Test\nVerify scenes can execute]:::validator
+        ContentCheck[Educational Correctness Validator\nCheck factual / logical consistency]:::validator
+        SyncCheck[Audio / Visual Sync Validator\nCheck timing alignment]:::validator
+        QualityGate{Quality Gate\nPass / Revise}:::validator
+    end
 
-    VisualTest -->|Approved| Manim
-    VisualTest -->|Failed| CodeFix
+    GenerationSet --> SchemaCheck
+    GenerationSet --> CodeCheck
+    GenerationSet --> ContentCheck
+    CodeCheck --> RenderTest
+    SchemaCheck --> QualityGate
+    RenderTest --> QualityGate
+    ContentCheck --> QualityGate
+    GenerationSet --> SyncCheck
+    SyncCheck --> QualityGate
+    QualityGate -->|Pass| State
+    QualityGate -->|Revise| Router
 
-    CodeFix --> Script
-    ContentFix --> Narration
-    ContentFix --> Concept
-    TimingFix --> Timing
+    subgraph Tools["Deterministic Execution & Media Tools"]
+        Manim[Manim Renderer]:::tool
+        TTS[TTS Engine]:::tool
+        FFmpeg[FFmpeg / Media Composer]:::tool
+        Captioner[Subtitle / Caption Processor]:::tool
+        Thumbnailer[Thumbnail Generator]:::tool
+    end
 
-    %% =========================
-    %% AUDIO / VIDEO GENERATION
-    %% =========================
-    Narration --> TTS
-    TTS --> SyncTest
+    State -->|Approved animation code| Manim
+    State -->|Approved narration text| TTS
+    State -->|Approved subtitle timeline| Captioner
 
-    Manim -->|Rendered Video| FFmpeg
-    TTS -->|Audio Track| FFmpeg
-    Subtitle -->|Subtitle Timeline| Subtitles
+    Manim -->|Rendered video| FFmpeg
+    TTS -->|Voice audio| FFmpeg
+    FFmpeg -->|Base video + audio| Captioner
+    Captioner -->|Final subtitled video| Thumbnailer
+    Thumbnailer -->|Final MP4 + thumbnail + timing metadata| ObjectStore
 
-    SyncTest -->|Approved| FFmpeg
-    SyncTest -->|Failed| TimingFix
+    Thumbnailer -->|Completed assets| ResultAPI
+    ObjectStore --> ResultAPI
+    DB --> ResultAPI
+    Cache --> ResultAPI
+    ResultAPI -->|Final explainer| User
 
-    %% =========================
-    %% FINAL ASSET PROCESSING
-    %% =========================
-    FFmpeg --> Subtitles
-    Subtitles --> Thumbnail
+    User -.->|Regenerate / simplify / expand / fix| Gateway
+    Gateway -.->|Update job requirements| State
+    State -.->|Targeted revision request| Router
 
-    Thumbnail -->|Final MP4 + Metadata| FastAPI
+    subgraph LLM["LLM Provider Layer"]
+        Gemini[Gemini]
+        Groq[Groq]
+        OpenAI[OpenAI]
+    end
 
-    %% =========================
-    %% PERSISTENCE
-    %% =========================
-    FastAPI -->|Save Job & Metadata| MySQL
-    FastAPI -->|Cache Final Video| Cache
+    Intent -.-> LLM
+    Scope -.-> LLM
+    Curriculum -.-> LLM
+    Objective -.-> LLM
+    Explanation -.-> LLM
+    Algorithm -.-> LLM
+    WorkedExample -.-> LLM
+    Trace -.-> LLM
+    VisualPlanner -.-> LLM
+    ScenePlanner -.-> LLM
+    CodeVisualPlanner -.-> LLM
+    ManimGen -.-> LLM
+    NarrationGen -.-> LLM
 
-    %% =========================
-    %% FINAL RESPONSE
-    %% =========================
-    FastAPI -->|Stream / Return Video URL| VideoPlayer
-    VideoPlayer --> User
+    Note1["Design rule: an Agent decides or generates.\nDeterministic services validate, render, store, or compose."]:::note
+    Note2["Every agent must have a typed input contract,\noutput contract, owner of the output, and failure path."]:::note
+    Note3["Shared state stores artifacts and status —\nit is not a dumping ground for arbitrary text."]:::note
 
-    %% =========================
-    %% FEEDBACK / ITERATION
-    %% =========================
-    User -.->|Regenerate / Improve| FastAPI
-    FastAPI -.-> State
+    Note1 -.-> Graph
+    Note2 -.-> S1
+    Note3 -.-> State
 ```
+
+## Architectural Principles
+
+1. **Do not implement every box as an LLM agent.** Use agents for decisions, synthesis, planning, and generation. Use ordinary code for schema validation, rendering, media composition, storage, caching, and deterministic checks.
+2. **Use typed artifact contracts between stages.** A downstream component should consume a stable structure rather than parsing free-form prose from another agent.
+3. **Keep LangGraph as the workflow coordinator.** Agents should perform bounded work; the graph should own sequencing, branching, retries, checkpoints, and termination.
+4. **Make revision targeted.** A failed render should return to code generation or code repair, not regenerate the entire lesson. A timing failure should update timing/narration/subtitle artifacts without rewriting unrelated content.
+5. **Treat the current Intent Analyzer as Stage 1, not as the architecture itself.** Its structured `IntentAnalysis` output is the right direction for a contract-first design.
