@@ -207,7 +207,7 @@ export default function App() {
                 {["not_found","premium","rate_limited","source_error","network_error"].includes(lookupState) && <p className="inline-error">{sessionError}</p>}
               </form>
               {problem && <div className="problem-result">
-                <div className="result-top"><span className="result-check"><Icon name="check" size={13}/></span><span>PROBLEM FOUND <b>· VERIFIED FROM LEETCODE</b></span><button type="button" onClick={() => {setProblem(null);setLookupState("idle");setSessionReady(false);}}>Change</button></div>
+                <div className="result-top"><span className="result-check"><Icon name="check" size={13}/></span><span>PROBLEM FOUND <b>· SOURCE DATA VALIDATED</b></span><button type="button" onClick={() => {setProblem(null);setLookupState("idle");setSessionReady(false);}}>Change</button></div>
                 <div className="problem-title-row"><div><div className="problem-number">LEETCODE #{problem.problem_number}</div><h3>{problem.title}</h3></div><span className={`difficulty ${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</span></div>
                 <div className="problem-statement source-statement" dangerouslySetInnerHTML={{ __html: problem.statement_html }} />
                 <div className="topic-row">{(problem.topic_tags || []).map(topic => <span key={topic}>{topic}</span>)}</div>
