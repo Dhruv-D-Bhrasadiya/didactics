@@ -1,205 +1,133 @@
-# Didactics — System Architecture
+# Didactics — Focused MVP Architecture
+
+## Product boundary
+
+The first milestone supports one entry point: a **LeetCode problem number**. It looks up the canonical problem, displays the retrieved details, and lets the learner select one of two paths: solve the problem or learn its prerequisites.
 
 ```mermaid
-graph TB
-    classDef user fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#000;
-    classDef api fill:#FFF3E0,stroke:#EF6C00,stroke-width:2px,color:#000;
-    classDef orchestrator fill:#E8EAF6,stroke:#3949AB,stroke-width:2px,color:#000;
-    classDef agent fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#000;
-    classDef artifact fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px,color:#000;
-    classDef validator fill:#FFF8E1,stroke:#F9A825,stroke-width:2px,color:#000;
-    classDef tool fill:#FCE4EC,stroke:#C2185B,stroke-width:2px,color:#000;
-    classDef storage fill:#ECEFF1,stroke:#455A64,stroke-width:2px,color:#000;
-    classDef note fill:#FAFAFA,stroke:#757575,stroke-dasharray:5 5,color:#333;
+flowchart TB
+    U([Learner]) --> UI[Client UI]
+    UI -->|Problem number| API[FastAPI API]
+    API --> V[Input validation]
+    V -->|Valid number| Lookup[Problem Lookup Service]
+    V -->|Invalid input| Error[Validation response]
+    Lookup --> Adapter[LeetCode Source Adapter]
+    Adapter --> Source[(LeetCode problem source)]
+    Source --> Normalize[Normalize + validate metadata]
+    Normalize --> Cache[(Problem metadata cache)]
+    Cache --> Summary[Problem Details Response]
+    Summary --> UI
+    UI --> Choice{Learner selects intent}
 
-    User([Learner / User]):::user
+    Choice -->|Solve| SolveReq[Solution-path request]
+    Choice -->|Prerequisites| PrereqReq[Prerequisite-path request]
 
-    subgraph API["Application Boundary"]
-        Gateway[FastAPI API Gateway]:::api
-        RequestMgr[Job / Request Manager]:::api
-        ResultAPI[Result / Video Delivery API]:::api
+    SolveReq --> Router[Learning Path Router]
+    PrereqReq --> Router
+    Router --> Context[Problem context + learner preferences]
+    Context --> SolveAgent[Solution Teaching Generator]
+    Context --> PrereqAgent[Prerequisite Curriculum Generator]
+
+    SolveAgent --> SolveSchema[SolutionLearningPlan validation]
+    PrereqAgent --> PrereqSchema[PrerequisiteLearningPath validation]
+    SolveSchema -->|Valid| Session[Learning Session response]
+    PrereqSchema -->|Valid| Session
+    Session --> UI
+    Error --> UI
+
+    subgraph LLM[Configured LLM Provider Layer]
+      Models[Gemini / Groq / OpenAI adapters]
     end
+    SolveAgent -.-> Models
+    PrereqAgent -.-> Models
 
-    User -->|Natural-language learning request| Gateway
-    Gateway --> RequestMgr
-    ResultAPI -->|Video URL + metadata + status| User
-
-    subgraph Persistence["Persistence & Caching"]
-        Cache[(Redis / Cache)]:::storage
-        DB[(MySQL / Persistent Metadata)]:::storage
-        ObjectStore[(Rendered Asset Store)]:::storage
+    subgraph Reliability[Cross-cutting controls]
+      Timeout[Timeouts + bounded retries]
+      Provenance[Source URL + retrieval metadata]
+      Tests[Unit + contract + end-to-end tests]
     end
-
-    RequestMgr -->|Lookup existing job / cache key| Cache
-    Cache -->|Cache hit| ResultAPI
-    RequestMgr -->|Create job + initial state| DB
-    ResultAPI --> DB
-    ResultAPI --> ObjectStore
-
-    subgraph Graph["LangGraph Workflow / Shared State"]
-        State[[Workflow State]]:::orchestrator
-        Router{Workflow Router}:::orchestrator
-        Checkpoint[(Checkpoint / Run State)]:::storage
-    end
-
-    RequestMgr -->|Cache miss / new generation job| State
-    State --> Router
-    State <--> Checkpoint
-
-    subgraph S1["Stage 1 — Request Understanding"]
-        RequestUnderstanding[Request Understanding Agent\nIdentify intent, level, requirements, and concept map]:::agent
-    end
-
-    Router --> RequestUnderstanding
-    RequestUnderstanding -->|Unified structured learning specification| State
-
-    subgraph S2["Stage 2 — Pedagogical Planning"]
-        Curriculum[Lesson / Chapter Planner\nOrder concepts and dependencies]:::agent
-        Objective[Learning Objective Agent\nDefine measurable outcomes]:::agent
-        ExamplePlan[Example & Exercise Planner\nSelect demonstrations / edge cases]:::agent
-    end
-
-    State --> Curriculum
-    State --> Objective
-    State --> ExamplePlan
-    Curriculum --> Objective
-    Objective --> ExamplePlan
-    ExamplePlan -->|Lesson plan + examples + objectives| State
-
-    subgraph S3["Stage 3 — Educational Content"]
-        Explanation[Concept Explanation Agent\nDraft explanatory content]:::agent
-        Algorithm[Algorithm / Procedure Agent\nDerive step-by-step procedure]:::agent
-        WorkedExample[Worked Example Agent\nGenerate concrete walkthrough]:::agent
-        Trace[Execution Trace Agent\nProduce state-by-state trace]:::agent
-        ContentArtifact[[Educational Content Artifact]]:::artifact
-    end
-
-    State --> Explanation
-    State --> Algorithm
-    State --> WorkedExample
-    State --> Trace
-    Explanation --> ContentArtifact
-    Algorithm --> ContentArtifact
-    WorkedExample --> ContentArtifact
-    Trace --> ContentArtifact
-    ContentArtifact --> State
-
-    subgraph S4["Stage 4 — Visual & Scene Planning"]
-        VisualPlanner[Visual Planner Agent\nMap content to visual representations]:::agent
-        ScenePlanner[Scene / Manim Planner\nDefine ordered animation scenes]:::agent
-        CodeVisualPlanner[Code Visualization Planner\nDefine highlighting / state changes]:::agent
-        TimingPlanner[Timing Planner\nEstimate durations and anchors]:::agent
-        Storyboard[[Storyboard + Timing Plan]]:::artifact
-    end
-
-    ContentArtifact --> VisualPlanner
-    ContentArtifact --> TimingPlanner
-    VisualPlanner --> ScenePlanner
-    VisualPlanner --> CodeVisualPlanner
-    TimingPlanner --> ScenePlanner
-    TimingPlanner --> CodeVisualPlanner
-    ScenePlanner --> Storyboard
-    CodeVisualPlanner --> Storyboard
-    Storyboard --> State
-
-    subgraph S5["Stage 5 — Generation"]
-        ManimGen[Manim Code Generator Agent\nGenerate deterministic animation script]:::agent
-        NarrationGen[Narration Agent\nGenerate voiceover script]:::agent
-        SubtitleGen[Subtitle / Caption Planner\nCreate caption segments]:::agent
-        GenerationSet[[Code + Narration + Subtitle Artifacts]]:::artifact
-    end
-
-    Storyboard --> ManimGen
-    ContentArtifact --> NarrationGen
-    Storyboard --> NarrationGen
-    Storyboard --> SubtitleGen
-    NarrationGen --> SubtitleGen
-    ManimGen --> GenerationSet
-    NarrationGen --> GenerationSet
-    SubtitleGen --> GenerationSet
-    GenerationSet --> State
-
-    subgraph S6["Stage 6 — Validation Gates"]
-        SchemaCheck[Schema / Contract Validator\nValidate structured artifacts]:::validator
-        CodeCheck[Python / Manim Static Validator\nCheck syntax and policy]:::validator
-        RenderTest[Render Smoke Test\nVerify scenes can execute]:::validator
-        ContentCheck[Educational Correctness Validator\nCheck factual / logical consistency]:::validator
-        SyncCheck[Audio / Visual Sync Validator\nCheck timing alignment]:::validator
-        QualityGate{Quality Gate\nPass / Revise}:::validator
-    end
-
-    GenerationSet --> SchemaCheck
-    GenerationSet --> CodeCheck
-    GenerationSet --> ContentCheck
-    CodeCheck --> RenderTest
-    SchemaCheck --> QualityGate
-    RenderTest --> QualityGate
-    ContentCheck --> QualityGate
-    GenerationSet --> SyncCheck
-    SyncCheck --> QualityGate
-    QualityGate -->|Pass| State
-    QualityGate -->|Revise| Router
-
-    subgraph Tools["Deterministic Execution & Media Tools"]
-        Manim[Manim Renderer]:::tool
-        TTS[TTS Engine]:::tool
-        FFmpeg[FFmpeg / Media Composer]:::tool
-        Captioner[Subtitle / Caption Processor]:::tool
-        Thumbnailer[Thumbnail Generator]:::tool
-    end
-
-    State -->|Approved animation code| Manim
-    State -->|Approved narration text| TTS
-    State -->|Approved subtitle timeline| Captioner
-
-    Manim -->|Rendered video| FFmpeg
-    TTS -->|Voice audio| FFmpeg
-    FFmpeg -->|Base video + audio| Captioner
-    Captioner -->|Final subtitled video| Thumbnailer
-    Thumbnailer -->|Final MP4 + thumbnail + timing metadata| ObjectStore
-
-    Thumbnailer -->|Completed assets| ResultAPI
-    ObjectStore --> ResultAPI
-    DB --> ResultAPI
-    Cache --> ResultAPI
-    ResultAPI -->|Final explainer| User
-
-    User -.->|Regenerate / simplify / expand / fix| Gateway
-    Gateway -.->|Update job requirements| State
-    State -.->|Targeted revision request| Router
-
-    subgraph LLM["LLM Provider Layer"]
-        Gemini[Gemini]
-        Groq[Groq]
-        OpenAI[OpenAI]
-    end
-
-    RequestUnderstanding -.-> LLM
-    Curriculum -.-> LLM
-    Objective -.-> LLM
-    Explanation -.-> LLM
-    Algorithm -.-> LLM
-    WorkedExample -.-> LLM
-    Trace -.-> LLM
-    VisualPlanner -.-> LLM
-    ScenePlanner -.-> LLM
-    CodeVisualPlanner -.-> LLM
-    ManimGen -.-> LLM
-    NarrationGen -.-> LLM
-
-    Note1["Design rule: an Agent decides or generates.\nDeterministic services validate, render, store, or compose."]:::note
-    Note2["Every agent must have a typed input contract,\noutput contract, owner of the output, and failure path."]:::note
-    Note3["Shared state stores artifacts and status —\nit is not a dumping ground for arbitrary text."]:::note
-
-    Note1 -.-> Graph
-    Note2 -.-> S1
-    Note3 -.-> State
+    Adapter -.-> Timeout
+    Normalize -.-> Provenance
+    SolveSchema -.-> Tests
+    PrereqSchema -.-> Tests
 ```
 
-## Architectural Principles
+## Request sequence
 
-1. **Do not implement every box as an LLM agent.** Use agents for decisions, synthesis, planning, and generation. Use ordinary code for schema validation, rendering, media composition, storage, caching, and deterministic checks.
-2. **Use typed artifact contracts between stages.** A downstream component should consume a stable structure rather than parsing free-form prose from another agent.
-3. **Keep LangGraph as the workflow coordinator.** Agents should perform bounded work; the graph should own sequencing, branching, retries, checkpoints, and termination.
-4. **Make revision targeted.** A failed render should return to code generation or code repair, not regenerate the entire lesson. A timing failure should update timing/narration/subtitle artifacts without rewriting unrelated content.
-5. **Keep Stage 1 as one bounded request-understanding call.** Its unified `RequestUnderstanding` output covers intent, scope, learner requirements, and a concept inventory; later stages consume that contract.
+```mermaid
+sequenceDiagram
+    actor Learner
+    participant UI as Client
+    participant API as FastAPI
+    participant Lookup as Problem Lookup
+    participant LC as LeetCode Source
+    participant LLM as Teaching Generator
+
+    Learner->>UI: Enter problem number
+    UI->>API: GET /api/problems/{number}
+    API->>Lookup: Validate + lookup
+    Lookup->>LC: Fetch canonical problem
+    LC-->>Lookup: Statement, examples, constraints, tags
+    Lookup-->>API: ProblemDetails + source provenance
+    API-->>UI: Render problem summary
+    Learner->>UI: Select Solve or Prerequisites
+    UI->>API: POST /api/learning-paths
+    API->>LLM: Generate only the selected path
+    LLM-->>API: Structured learning artifact
+    API->>API: Pydantic validation
+    API-->>UI: Learning session
+```
+
+## Responsibilities
+
+| Component | Responsibility | Must not do |
+|---|---|---|
+| Client | Collect number, show fetched problem, collect intent | Guess metadata |
+| Problem Lookup Service | Validate number, call adapter, normalize source fields | Ask an LLM to invent question content |
+| LeetCode Source Adapter | Encapsulate upstream request and source-specific parsing | Contain teaching prompts |
+| Learning Path Router | Route to exactly one selected learning mode | Run both modes by default |
+| Solution Teaching Generator | Explain strategy, trace, correctness, complexity, implementation | Change canonical problem facts |
+| Prerequisite Curriculum Generator | Identify and teach relevant concepts in dependency order | Reveal full solution by default |
+| Schema Validators | Reject incomplete or malformed artifacts | Silently coerce invalid content |
+| Cache | Reuse source metadata safely | Serve stale/unattributed problem details |
+
+## Learning path contracts
+
+### Solve path
+
+```mermaid
+flowchart LR
+    P[Confirmed Problem] --> T[Task and constraints]
+    T --> O[Key observations]
+    O --> A[Approach derivation]
+    A --> W[Worked example / trace]
+    W --> C[Correctness rationale]
+    C --> X[Time and space complexity]
+    X --> I[Implementation in selected language]
+```
+
+### Prerequisites path
+
+```mermaid
+flowchart LR
+    P[Confirmed Problem] --> R[Identify required concepts]
+    R --> D[Build dependency graph]
+    D --> O[Topological learning order]
+    O --> E[Explain each concept]
+    E --> Q[Example + knowledge check]
+    Q --> B[Connect concepts to target problem]
+```
+
+## Error handling
+
+- Invalid number: return a validation error and keep the number field editable.
+- Problem not found: return a not-found result; do not call the teaching model.
+- Source unavailable/rate-limited: return a retriable upstream error; do not fabricate a problem.
+- Missing optional metadata: label it unavailable and continue only if required problem context exists.
+- LLM timeout/provider failure: return a recoverable generation error and preserve the confirmed problem.
+- Invalid generated schema: reject it; allow bounded repair/retry, then surface a clear error.
+- Unknown/unsupported intent: reject it rather than selecting a mode implicitly.
+
+## Scope guard
+
+The following are intentionally outside the first milestone: generic topic prompting, multi-platform ingestion, Manim/video/TTS generation, autonomous code submission, progress dashboards, social features, and a large multi-agent graph. Add these only after the problem-number-to-learning-path journey works reliably end to end.
