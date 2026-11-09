@@ -1,7 +1,16 @@
 import unittest
 from fastapi.testclient import TestClient
 from backend.app.main import app
-from backend.app.services.leetcode_source import normalize_question
+from backend.app.services.leetcode_source import _resolve_slug, normalize_question
+
+
+class ProblemIndexTests(unittest.TestCase):
+    def test_uses_frontend_problem_number_not_internal_database_id(self):
+        index = {"stat_status_pairs": [
+            {"stat": {"question_id": 9021, "frontend_question_id": 1, "question__title_slug": "two-sum"}}
+        ]}
+        self.assertEqual(_resolve_slug(index, 1), "two-sum")
+        self.assertIsNone(_resolve_slug(index, 9021))
 
 
 class ProblemNormalizationTests(unittest.TestCase):

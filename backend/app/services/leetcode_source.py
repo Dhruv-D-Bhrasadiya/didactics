@@ -138,6 +138,17 @@ def _sanitize_statement(source_html: str) -> tuple[str, str, list[str]]:
     return safe.result(), plain, examples
 
 
+def _resolve_slug(index_payload: dict[str, Any], problem_number: int) -> str | None:
+    """Match the user-visible frontend ID, not LeetCode's internal database ID."""
+    wanted = str(problem_number)
+    for item in index_payload.get("stat_status_pairs", []):
+        stat = item.get("stat") or {}
+        frontend_id = stat.get("frontend_question_id")
+        if str(frontend_id if frontend_id is not None else stat.get("question_id", "")) == wanted:
+            return stat.get("question__title_slug")
+    return None
+
+
 def normalize_question(problem_number: int, question: dict[str, Any]) -> dict[str, Any]:
     title = str(question.get("title") or "").strip()
     slug = str(question.get("titleSlug") or "").strip()
@@ -215,12 +226,7 @@ async def fetch_problem(problem_number: int) -> dict[str, Any]:
             index_response.raise_for_status()
             index = index_response.json()
 
-            slug = None
-            for item in index.get("stat_status_pairs", []):
-                stat = item.get("stat") or {}
-                if str(stat.get("question_id", "")) == str(problem_number):
-                    slug = stat.get("question__title_slug")
-                    break
+            slug = _resolve_slug(index, problem_number)
             if not slug:
                 raise ProblemNotFound()
 
