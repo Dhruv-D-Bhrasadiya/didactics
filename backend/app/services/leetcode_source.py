@@ -202,6 +202,63 @@ def normalize_question(problem_number: int, question: dict[str, Any]) -> dict[st
     }
 
 
+async def _fetch_from_community_mirror(
+    client: httpx.AsyncClient, problem_number: int
+) -> dict[str, Any] | None:
+    """Fetch a public problem record from a community-maintained LeetCode mirror.
+
+    This is deliberately a fallback provider: it is not operated by LeetCode and
+    may be unavailable or change its response format without notice.
+    """
+    url = f"https://leetcode-api-pied.vercel.app/problem/{problem_number}"
+    try:
+        response = await client.get(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (compatible; Didactics/1.0)",
+            },
+        )
+        if response.status_code == 404:
+            return None
+        if response.status_code == 429:
+            raise ProblemRateLimited()
+        response.raise_for_status()
+        raw = response.json()
+        if not isinstance(raw, dict):
+            return None
+
+        canonical_url = str(raw.get("url") or "").strip()
+        slug = str(raw.get("titleSlug") or "").strip()
+        if not slug and "/problems/" in canonical_url:
+            slug = canonical_url.split("/problems/", 1)[1].strip("/").split("/", 1)[0]
+        if not slug or not raw.get("title") or not raw.get("content"):
+            return None
+
+        question = {
+            "questionId": raw.get("questionId") or raw.get("questionFrontendId") or problem_number,
+            "title": raw.get("title"),
+            "titleSlug": slug,
+            "content": raw.get("content"),
+            "difficulty": raw.get("difficulty"),
+            "isPaidOnly": raw.get("isPaidOnly", False),
+            "topicTags": raw.get("topicTags") or [],
+            "sampleTestCase": raw.get("sampleTestCase") or "",
+            "metaData": raw.get("metaData") or "{}",
+            "stats": raw.get("stats") or "{}",
+        }
+        normalized = normalize_question(problem_number, question)
+        if not normalized["statement_text"]:
+            return None
+        normalized["source"] = "LeetCode (community mirror)"
+        normalized["source_provider"] = "leetcode-api-pied"
+        return normalized
+    except ProblemRateLimited:
+        raise
+    except (httpx.HTTPError, ValueError, TypeError, KeyError):
+        return None
+
+
 async def fetch_problem(problem_number: int) -> dict[str, Any]:
     cached = _cache.get(problem_number)
     if cached and cached[0] > time.monotonic():
@@ -223,6 +280,15 @@ async def fetch_problem(problem_number: int) -> dict[str, Any]:
             timeout=httpx.Timeout(25.0, connect=10.0),
             follow_redirects=True,
         ) as client:
+            # First try a community-maintained REST mirror. This avoids relying
+            # exclusively on LeetCode's undocumented index + GraphQL endpoints.
+            mirrored = await _fetch_from_community_mirror(client, problem_number)
+            if mirrored:
+                _cache[problem_number] = (
+                    time.monotonic() + CACHE_TTL_SECONDS, mirrored
+                )
+                return mirrored
+
             for index_url, graphql_url, origin in sources:
                 headers = {
                     "User-Agent": (
