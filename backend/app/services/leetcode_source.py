@@ -207,56 +207,112 @@ async def fetch_problem(problem_number: int) -> dict[str, Any]:
     if cached and cached[0] > time.monotonic():
         return cached[1]
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; Didactics/1.0; problem lookup)",
-        "Content-Type": "application/json",
-        "Referer": "https://leetcode.com/",
-    }
+    # LeetCode operates separate public hosts. Try the primary .com host first,
+    # then the .cn host when the primary host is blocked or unavailable.
+    sources = [
+        ("https://leetcode.com/api/problems/all/", "https://leetcode.com/graphql", "https://leetcode.com/"),
+        ("https://leetcode.cn/api/problems/all/", "https://leetcode.cn/graphql", "https://leetcode.cn/"),
+    ]
+    last_error = "LeetCode did not return a usable problem response."
+    valid_index_seen = False
+    slug = None
+    payload = None
+
     try:
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(18.0, connect=8.0),
+            timeout=httpx.Timeout(25.0, connect=10.0),
             follow_redirects=True,
-            headers=headers,
         ) as client:
-            index_response = await client.get(INDEX_URL)
-            if index_response.status_code == 429:
-                raise ProblemRateLimited()
-            if index_response.status_code in {401, 403}:
-                raise ProblemSourceUnavailable("LeetCode blocked the public problem-index request.")
-            index_response.raise_for_status()
-            index = index_response.json()
+            for index_url, graphql_url, origin in sources:
+                headers = {
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/130.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": "application/json, text/plain, */*",
+                    "Content-Type": "application/json",
+                    "Origin": origin.rstrip("/"),
+                    "Referer": origin,
+                }
+                try:
+                    index_response = await client.get(index_url, headers=headers)
+                    if index_response.status_code == 429:
+                        raise ProblemRateLimited()
+                    if index_response.status_code in {401, 403} or index_response.status_code >= 500:
+                        last_error = (
+                            f"LeetCode problem index at {index_url} returned "
+                            f"HTTP {index_response.status_code}."
+                        )
+                        continue
+                    index_response.raise_for_status()
+                    index = index_response.json()
+                    if not isinstance(index, dict) or not isinstance(index.get("stat_status_pairs"), list):
+                        last_error = f"LeetCode returned an unexpected problem-index format from {index_url}."
+                        continue
+                    valid_index_seen = True
+                    slug = _resolve_slug(index, problem_number)
+                    if not slug:
+                        continue
 
-            slug = _resolve_slug(index, problem_number)
-            if not slug:
-                raise ProblemNotFound()
+                    details_response = await client.post(
+                        graphql_url,
+                        json={
+                            "operationName": "questionData",
+                            "query": QUESTION_QUERY,
+                            "variables": {"titleSlug": slug},
+                        },
+                        headers=headers,
+                    )
+                    if details_response.status_code == 429:
+                        raise ProblemRateLimited()
+                    if details_response.status_code in {401, 403} or details_response.status_code >= 500:
+                        last_error = (
+                            f"LeetCode problem details at {graphql_url} returned "
+                            f"HTTP {details_response.status_code}."
+                        )
+                        payload = None
+                        continue
+                    details_response.raise_for_status()
+                    payload = details_response.json()
+                    if not isinstance(payload, dict):
+                        last_error = f"LeetCode returned an unexpected GraphQL response from {graphql_url}."
+                        payload = None
+                        continue
+                    question = (payload.get("data") or {}).get("question")
+                    if question:
+                        break
+                    if payload.get("errors"):
+                        last_error = f"LeetCode GraphQL error: {payload['errors'][0].get('message', 'unknown error')}"
+                    else:
+                        last_error = "LeetCode returned no question details."
+                    payload = None
+                except ProblemRateLimited:
+                    raise
+                except httpx.HTTPStatusError as exc:
+                    last_error = (
+                        f"LeetCode request to {exc.request.url} returned "
+                        f"HTTP {exc.response.status_code}."
+                    )
+                except (httpx.HTTPError, ValueError, TypeError) as exc:
+                    last_error = f"Could not retrieve data from {origin}: {type(exc).__name__}: {exc}"
 
-            details_response = await client.post(
-                GRAPHQL_URL,
-                json={"query": QUESTION_QUERY, "variables": {"titleSlug": slug}},
-            )
-            if details_response.status_code == 429:
-                raise ProblemRateLimited()
-            if details_response.status_code in {401, 403}:
-                raise ProblemSourceUnavailable("LeetCode blocked the problem-details request.")
-            details_response.raise_for_status()
-            payload = details_response.json()
-    except (ProblemNotFound, ProblemRateLimited, ProblemSourceUnavailable):
+    except ProblemRateLimited:
         raise
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 429:
-            raise ProblemRateLimited() from exc
-        raise ProblemSourceUnavailable(
-            f"LeetCode returned HTTP {exc.response.status_code}."
-        ) from exc
     except (httpx.HTTPError, ValueError, TypeError) as exc:
         raise ProblemSourceUnavailable(
-            "Could not retrieve valid data from LeetCode."
+            f"Could not connect to LeetCode. Check your internet connection or network restrictions. ({type(exc).__name__})"
         ) from exc
+
+    if not valid_index_seen:
+        raise ProblemSourceUnavailable(last_error)
+    if not slug:
+        raise ProblemNotFound()
+    if not payload:
+        raise ProblemSourceUnavailable(last_error)
 
     question = (payload.get("data") or {}).get("question")
     if not question:
-        if payload.get("errors"):
-            raise ProblemSourceUnavailable("LeetCode returned a GraphQL error.")
         raise ProblemNotFound()
     if question.get("isPaidOnly") and not question.get("content"):
         raise PremiumProblem()
