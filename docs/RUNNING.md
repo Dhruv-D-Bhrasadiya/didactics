@@ -1,48 +1,42 @@
-# Running Didactics
+# Running the archived prototype
 
-## Prerequisites
+The files in the current `backend/` and root `main.py` are preserved from the previous Didactics prototype. They are not yet the implementation of the focused LeetCode MVP described in the root README and SRS.
+
+## Prototype prerequisites
 
 - Windows PowerShell
 - Python 3.10 or newer
-- An API key for the provider you want to use
+- An API key for the provider being tested
 
-## Create and activate the virtual environment
-
-Run these commands from the repository root:
+Create and activate a virtual environment from the repository root:
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+.\\.venv\\Scripts\\Activate.ps1
+python -m pip install -r backend/requirements.txt
 ```
 
-If PowerShell blocks activation for the current terminal, run:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
-.\.venv\Scripts\Activate.ps1
-```
-
-## Configure API keys
-
-Create `backend/.env`:
+Create `backend/.env` with the provider credentials required by the prototype:
 
 ```env
-GEMINI_API_KEY=your_primary_key
-GEMINI_API_KEY_FALLBACK_1=your_fallback_key
-GROQ_API_KEY=your_groq_key
+GEMINI_API_KEY=your_key
+GROQ_API_KEY=your_key
+OPENAI_API_KEY=your_key
 DEFAULT_PROVIDER=gemini
 ```
 
-The factory also supports `GROQ_API_KEY`, `GROQ_API_KEY_FALLBACK_1`, and `OPENAI_API_KEY`.
-
-## Run Stage 1
-
-From the repository root, explicitly choose the provider and model you want to test:
+Run the legacy request-understanding CLI:
 
 ```powershell
-.\.venv\Scripts\python.exe main.py --provider groq --model "qwen/qwen3.8-27b" --query "Teach me binary search in Java"
-.\.venv\Scripts\python.exe main.py --provider gemini --model "gemini-3.6-flash" --query "Teach me binary search in Java"
+.\\.venv\\Scripts\\python.exe main.py --provider groq --model "qwen/qwen3.8-27b" --query "Teach me binary search in Java"
 ```
 
-Each successful run makes one model invocation, prints the single-schema analysis, and saves the full run and trace to `debug/request_understanding_agent/`. Provider client retries are disabled. If a provider has multiple configured keys, eligible quota/auth/connection/server errors may retry with another key for the same model. Use `--help` for CLI options; see [SINGLE_AGENT.md](SINGLE_AGENT.md) for all schema, token, and model-selection details.
+The prototype run writes debug artifacts under `debug/request_understanding_agent/`. Do not commit real API keys or debug records containing private prompts.
+
+## Tests
+
+```powershell
+.\\.venv\\Scripts\\python.exe -m unittest discover -s backend/test -p "test_*.py" -v
+```
+
+For the focused MVP implementation plan, see the root [README](../README.md), [SRS](SRS.md), and [architecture diagram](../diagram.md).
