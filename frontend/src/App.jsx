@@ -85,8 +85,16 @@ export default function App() {
     }
     setLookupState("loading");
     try {
-      const response = await fetch(`/api/problems/${value}`);
-      const payload = await response.json();
+      const response = await fetch(`/api/problems/${value}`, {
+        headers: { Accept: "application/json" },
+      });
+      const responseText = await response.text();
+      let payload = {};
+      try {
+        payload = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        throw new Error(`The API returned an unreadable response (HTTP ${response.status}). Check the backend terminal.`);
+      }
       if (!response.ok) {
         const detail = payload.detail || {};
         const states = {
@@ -107,9 +115,11 @@ export default function App() {
       }
       setProblem(payload);
       setLookupState("found");
-    } catch {
+    } catch (error) {
       setLookupState("network_error");
-      setSessionError("Cannot reach the Didactics API. Start the backend and try again.");
+      setSessionError(error instanceof Error
+        ? error.message
+        : "Cannot reach the Didactics API. Check that the backend is running on port 8000 and restart the Vite dev server.");
     }
   }
 
