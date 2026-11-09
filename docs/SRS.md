@@ -1,352 +1,256 @@
 # Didactics — Software Requirements Specification
 
-**Version:** 2.0  
-**Status:** Focused MVP baseline  
+**Version:** 2.1  
+**Status:** Focused personalized visual-learning MVP  
 **Date:** 2026-11-09
 
 ## 1. Purpose
 
-Didactics is a LeetCode-focused learning agent. The learner supplies a LeetCode problem number. The system retrieves the canonical problem details, presents them to the learner, and asks them to choose one of two learning goals:
+Didactics is a LeetCode-focused tutor that starts from a problem number and produces a personalized learning experience. After retrieving the canonical problem details, the learner chooses a programming language, independently sets DSA and programming proficiency, and chooses one of two intents:
 
-1. **Solve the problem** — learn how to derive and implement a solution.
-2. **Learn the prerequisites** — learn the foundational concepts needed to solve the problem before seeing the solution.
+1. **Solve this problem:** learn the reasoning, algorithm, complexity and implementation.
+2. **Teach me the prerequisites:** learn the concepts required before attempting the problem.
 
-This SRS deliberately narrows the previous broad educational-video vision to one end-to-end workflow. The existing implementation is preserved on `archive/current-project-2026-11`; the main branch defines the new product baseline.
+The experience includes an algorithm animation pipeline. A structured algorithm trace is converted into a validated storyboard, rendered by a renderer adapter (Manim is the initial target), checked for quality, and attached to the lesson. Textual teaching must remain usable if animation rendering fails.
 
-## 2. Goals and success criteria
+## 2. Product goals and success criteria
 
-### 2.1 Goals
-- Make a problem number the primary and sufficient input for the initial lookup.
-- Retrieve problem metadata from a canonical source rather than asking an LLM to guess it.
-- Let the learner inspect and confirm the problem before generation.
-- Provide two distinct, explicit learning paths.
-- Produce structured, validated educational artifacts.
-- Keep external services replaceable and tests deterministic.
-- Ship a narrow, usable workflow before expanding to other coding platforms or learning topics.
-
-### 2.2 MVP acceptance criteria
-- A valid supported problem number returns its matching title and problem metadata.
-- Invalid and unknown numbers return clear errors without calling the teaching model.
-- The details view shows source provenance and makes unavailable optional fields explicit.
-- The learner can select either Solve or Prerequisites after lookup.
-- Selecting Solve generates a solution-focused learning artifact only.
-- Selecting Prerequisites generates a dependency-ordered curriculum and does not reveal the complete solution by default.
-- Both artifacts are schema validated before being returned.
-- Upstream and LLM failures preserve the already retrieved problem context.
+- Problem number is the primary input.
+- Canonical question facts are fetched from a source adapter, never hallucinated by the teaching model.
+- The learner configures language and two independent proficiency dimensions.
+- Both learning intents are distinct and personalized.
+- Beginner programming proficiency receives explicit explanations of syntax used in the generated code.
+- Algorithm traces power both written dry runs and animation, keeping them consistent.
+- Animation is generated from a typed storyboard and safe renderer templates.
+- Render failures degrade gracefully to text/code lessons.
 
 ## 3. Scope
 
-### 3.1 In scope
-- LeetCode problem number input and validation.
-- Canonical problem lookup and normalization.
-- Problem summary/confirmation.
-- Solve-vs-prerequisites selection.
-- Structured solution teaching.
-- Structured prerequisite teaching.
-- Configurable LLM provider/model integration.
-- Caching, timeouts, bounded retries, source attribution, and tests.
+### 3.1 Included
+- LeetCode problem-number input, lookup, normalization and confirmation.
+- Language selection: Java, Python, C, C++.
+- DSA proficiency: Beginner, Intermediate, Advanced.
+- Programming proficiency: Beginner, Intermediate, Advanced.
+- Solve and prerequisite learning paths.
+- Language-specific code and proficiency-aware syntax explanations.
+- Canonical algorithm trace.
+- Structured storyboard generation and validation.
+- Initial Manim renderer adapter, render worker, QA and artifact playback.
+- Caching, bounded retries, error states and automated tests.
 
-### 3.2 Out of scope for this MVP
-- Free-form topic or natural-language problem discovery.
-- Other coding platforms.
-- User accounts, profiles, streaks, badges, leaderboards, social features, and detailed progress analytics.
-- Automatic code submission or judging on LeetCode.
-- Manim animations, TTS, generated videos, subtitles, and media storage.
-- Broad autonomous internet research.
-- Multiple parallel agents for tasks that can be handled by one bounded generator or deterministic service.
+### 3.2 Deferred
+- Other coding platforms and natural-language topic discovery.
+- User accounts, progress dashboards, social features and leaderboards.
+- Automatic code submission/judging.
+- TTS, voice narration, avatar presenters and advanced video editing.
+- Unrestricted multi-agent orchestration.
+- Arbitrary model-generated code execution.
 
-## 4. Users and primary use cases
+## 4. Learner journey and settings
 
-**Primary user:** A learner practicing algorithmic problem solving who may either want a guided solution or need to fill conceptual gaps first.
+1. Enter a positive LeetCode problem number.
+2. Retrieve and review canonical problem details.
+3. Select one language: Java, Python, C, or C++.
+4. Select DSA proficiency: Beginner, Intermediate, or Advanced.
+5. Select programming proficiency: Beginner, Intermediate, or Advanced.
+6. Select Solve or Prerequisites.
+7. Receive tailored teaching content, code/examples, and animation when enabled.
+8. Play, pause, step through, and replay the animation; continue using text/code if rendering is unavailable.
 
-| ID | Use case | Expected result |
-|---|---|---|
-| UC-01 | Enter a problem number | System validates the number and looks up the problem |
-| UC-02 | Inspect the problem | System displays canonical statement, examples, constraints, difficulty, tags and URL when available |
-| UC-03 | Choose Solve | System generates a structured solution walkthrough |
-| UC-04 | Choose Prerequisites | System generates a concept curriculum in dependency order |
-| UC-05 | Recover from lookup failure | Learner sees a retryable error; no fabricated details |
-| UC-06 | Recover from generation failure | Learner retains problem details and can retry the selected learning path |
+### FR-01 — Language selection
+The system shall support Java, Python, C and C++. The selected language shall be used consistently for solution code, prerequisite examples, syntax annotations, code labels and language-specific discussion. Unsupported language values shall be rejected.
 
-## 5. User journey
+### FR-02 — Independent proficiency selection
+The system shall collect two independent levels:
+- `dsa_proficiency`: `beginner | intermediate | advanced`
+- `programming_proficiency`: `beginner | intermediate | advanced`
 
-1. Learner opens Didactics.
-2. Learner enters a numeric LeetCode problem ID.
-3. Client validates basic input shape and requests the problem.
-4. Backend validates range/format and calls the problem-source adapter.
-5. Adapter retrieves canonical problem data and maps it into a normalized schema.
-6. UI shows title, difficulty, statement, examples, constraints, tags, and canonical URL where available.
-7. Learner chooses **Solve this problem** or **Teach me the prerequisites**.
-8. Backend dispatches only the selected path.
-9. The teaching generator returns a structured result.
-10. Backend validates the result and returns it as a learning session.
-11. Learner can retry generation or return to problem selection.
+The system shall not infer one from the other. All combinations must be valid, including advanced programming with beginner DSA and beginner programming with advanced DSA.
 
-## 6. Functional requirements
+### FR-03 — Programming-level adaptation
+- **Beginner:** explain syntax used in the actual code. Cover relevant declarations, types, assignments, loops, conditionals, methods/functions, arrays/collections, pointers/references, memory behavior and library APIs as appropriate to the selected language. Include annotated code and small syntax examples where helpful.
+- **Intermediate:** explain non-obvious syntax, language APIs, data representation and language-specific trade-offs. Avoid unnecessary explanations of elementary constructs.
+- **Advanced:** prefer idiomatic concise code and focus on subtle language behavior, algorithmic trade-offs and performance.
+- Explanations shall be scoped to constructs used by the current lesson, not become a generic language course.
 
-### FR-01 — Problem-number input
-- The system shall accept a positive integer problem number.
-- The system shall reject blank, non-numeric, negative, and malformed values.
-- The initial UX shall not require title search or a natural-language prompt.
+### FR-04 — DSA-level adaptation
+- **Beginner:** define core terminology, explain prerequisite concepts and derive the approach incrementally.
+- **Intermediate:** assume common structures/algorithms but explain important observations and trade-offs.
+- **Advanced:** focus on invariants, proof, complexity, optimizations and alternatives.
+- The system shall adapt explanation depth without changing the correctness of the algorithm.
 
-### FR-02 — Problem lookup
-- The backend shall query a dedicated problem-source adapter.
-- The adapter shall return normalized data with canonical source URL/identifier.
-- The system shall distinguish not-found, upstream-unavailable, rate-limited, and malformed-source responses.
-- The system shall not infer a problem statement from the number with an LLM.
+## 5. Problem retrieval requirements
 
-### FR-03 — Problem details
-The normalized result should include:
-- Number and slug (when available).
-- Canonical title.
-- Difficulty.
-- Full statement/description.
-- Examples and explanations.
-- Constraints.
-- Topic tags.
-- Canonical URL.
-- Source name and retrieval timestamp.
+### FR-05 — Input and lookup
+- Accept a positive integer problem number.
+- Reject blank, malformed, zero and negative values before source access.
+- Fetch from a dedicated problem-source adapter.
+- Normalize number, slug, title, difficulty, statement, examples, constraints, topic tags, canonical URL, source name and retrieval time.
+- Distinguish not-found, upstream-unavailable, rate-limited and malformed-source outcomes.
+- Do not invoke teaching or animation generation if lookup fails.
 
-Optional fields may be absent. Required fields for a valid details screen are problem number, title, statement (or explicitly supported statement representation), and canonical source reference.
+### FR-06 — Confirmation
+Display the retrieved title, difficulty, statement, examples, constraints, tags and canonical URL before teaching. Allow the learner to return and enter another number. Missing optional fields must be explicitly represented.
 
-### FR-04 — Problem confirmation
-- The system shall show retrieved details before generating teaching content.
-- The learner shall be able to return and enter another problem number.
-- The system shall clearly distinguish source-provided metadata from Didactics-generated content.
+## 6. Learning intent requirements
 
-### FR-05 — Learning-path choice
-The UI shall offer exactly two first-class actions:
-- `solve`
-- `prerequisites`
+### FR-07 — Intent selection
+The learner shall explicitly select `solve` or `prerequisites`. The backend shall execute only the selected path. No default path shall be silently selected.
 
-The selected intent shall be explicit in the API request. The default shall not silently choose a path.
-
-### FR-06 — Solve learning path
-The output shall contain:
-- Problem restatement and input/output model.
-- Constraints analysis.
-- Key observations.
-- Brute-force baseline when pedagogically useful.
-- Selected approach and why it works.
-- Ordered algorithm steps or pseudocode.
-- Worked example with intermediate states.
-- Correctness intuition or proof outline.
+### FR-08 — Solve path
+The output shall include:
+- Task restatement and input/output model.
+- Constraints and key observations.
+- Brute-force baseline when useful.
+- Optimized approach derivation and algorithm steps.
+- Correctness rationale or proof outline.
 - Time and space complexity with justification.
-- Implementation in the requested/configured language.
-- Relevant edge cases.
+- Selected-language implementation.
+- Programming-proficiency-aware syntax explanations.
+- Worked sample trace and relevant edge cases.
+- Structured trace states suitable for animation.
 
-The generator should avoid spoiling the complete implementation before explaining the approach. The UI may progressively reveal sections in teaching order.
+### FR-09 — Prerequisite path
+The output shall include:
+- Problem-specific prerequisite concepts.
+- Dependency graph and dependency-valid learning order.
+- Explanation of why each concept matters to the target problem.
+- Concept lesson and standalone example for each concept.
+- Selected-language examples and proficiency-aware syntax explanations.
+- Knowledge checks and expected answers.
+- Final mapping from concepts to the target problem.
+- No complete target solution by default.
 
-### FR-07 — Prerequisite learning path
-The output shall contain:
-- A set of prerequisite concepts tailored to the problem.
-- A dependency graph or explicit prerequisite relationships.
-- A topologically ordered learning sequence.
-- Why each concept is required for this problem.
-- A concise explanation and a standalone example for each concept.
-- A short knowledge check or practice prompt for each concept.
-- A final mapping from the concepts to the target problem.
+## 7. Animation requirements
 
-The path shall not reveal the complete target solution by default. A learner must explicitly switch to the Solve path to request it.
+### FR-10 — Shared trace
+The system shall create a language-independent `AlgorithmTrace` from the solution walkthrough. The written dry run and animation shall consume the same trace data. Concept lessons may create smaller concept traces when animation is pedagogically useful.
 
-### FR-08 — Learning level and language
-- The first implementation may use a configured default learner level and programming language.
-- The API shall allow optional overrides.
-- Unknown values shall be represented explicitly rather than guessed.
+### FR-11 — Storyboard generation
+The animation planner shall transform validated trace data into a structured storyboard. Each storyboard shall define:
+- Version and source lesson/trace reference.
+- Scenes with IDs, titles, purpose and duration.
+- Visual objects with stable IDs, types, labels and initial states.
+- Ordered steps with source trace-state references.
+- State changes, highlights, pointers/index movement and captions.
+- Transitions and durations.
+- Render profile: resolution, frame rate, theme and output format.
 
-### FR-09 — Structured output
-- Pydantic models shall validate all generated artifacts.
-- Invalid output shall be rejected and may receive a bounded repair attempt.
-- The API shall never return a partial artifact as successful without marking it partial.
+### FR-12 — Storyboard validation
+- Validate the storyboard against a strict schema.
+- Validate object references and transition consistency.
+- Ensure every animation step maps to an actual trace state.
+- Reject malformed storyboards before rendering.
+- Allow only bounded schema-repair attempts.
 
-### FR-10 — Error handling
-- Errors shall include a stable error code, a user-safe message, and whether retry is appropriate.
-- API keys and internal provider error payloads shall not be exposed.
-- The original problem result shall remain available when a later generation operation fails.
+### FR-13 — Rendering
+- The initial renderer shall use a Manim adapter behind a renderer interface.
+- Rendering shall run asynchronously in an isolated worker.
+- Renderer instructions shall be produced from trusted scene templates and validated structured data.
+- Arbitrary model-generated shell commands or unrestricted Python shall never be executed.
+- Enforce CPU, memory, wall-time, output-size and frame-count limits.
+- Persist the storyboard, video and render metadata.
 
-## 7. External interfaces
+### FR-14 — Render QA
+Validate:
+- Output exists and decodes.
+- Duration and frame count are non-zero.
+- Dimensions and frame rate match the requested profile.
+- Captions remain readable and within safe areas.
+- No blank/missing scenes, missing visual objects or unexpected clipping.
+- Artifact is linked to the exact storyboard and trace version.
 
-### 7.1 API endpoints
+Failed renders shall receive bounded retries. After retries are exhausted, animation status shall be failed/unavailable while the textual lesson remains available.
 
-| Method | Endpoint | Description |
+### FR-15 — Animation playback
+The client shall support play, pause, replay and step/scene navigation where the artifact format supports it. It shall show render status and never display a broken playback URL as ready.
+
+## 8. API contracts
+
+| Method | Endpoint | Purpose |
 |---|---|---|
-| GET | `/health` | Liveness/readiness summary |
-| GET | `/api/problems/{number}` | Retrieve normalized LeetCode problem details |
-| POST | `/api/learning-paths` | Generate one selected learning path |
+| GET | `/health` | Service health |
+| GET | `/api/problems/{number}` | Retrieve canonical problem |
+| POST | `/api/learning-sessions` | Create personalized learning session |
+| GET | `/api/learning-sessions/{session_id}` | Retrieve session and generation status |
+| GET | `/api/animations/{animation_id}` | Retrieve animation status and artifact metadata |
 
 Example request:
 
 ```json
 {
   "problem_number": 1,
-  "intent": "prerequisites",
+  "intent": "solve",
   "language": "java",
-  "learner_level": "beginner"
+  "dsa_proficiency": "beginner",
+  "programming_proficiency": "beginner",
+  "animation": true
 }
 ```
 
-Example response envelope:
+## 9. Core data contracts
 
-```json
-{
-  "problem": {
-    "number": 1,
-    "title": "Two Sum",
-    "difficulty": "Easy",
-    "canonical_url": "https://leetcode.com/problems/two-sum/"
-  },
-  "intent": "prerequisites",
-  "learning_artifact": {},
-  "status": "completed"
-}
-```
+- **ProblemDetails:** canonical problem fields and source provenance.
+- **LearnerConfig:** language enum, DSA proficiency enum, programming proficiency enum.
+- **LearningSessionRequest:** problem number, intent, learner config, animation preference.
+- **SolutionLearningPlan:** observations, approach, proof, complexity, implementation, syntax annotations, examples and trace.
+- **PrerequisiteLearningPath:** concept nodes, dependency edges, learning order, examples, checks and target-problem bridge.
+- **AlgorithmTrace:** ordered language-independent states and operations.
+- **AnimationStoryboard:** versioned scenes, objects, steps, transitions, captions and render profile.
+- **AnimationJob:** job ID, status, attempts, timestamps and diagnostics.
+- **AnimationArtifact:** artifact URI, format, duration, dimensions, frame rate, storyboard/trace versions and QA report.
+- **LearningSession:** problem, intent, learner configuration, lesson artifacts and animation status.
 
-The values above illustrate the contract only. The live lookup is responsible for supplying real problem metadata.
+## 10. Non-functional requirements and guardrails
 
-### 7.2 Problem source adapter
-- Hide source-specific endpoints, payloads, authentication and parsing behind an interface.
-- Record the upstream URL/identifier and retrieval time.
-- Apply timeout and bounded retry policies.
-- Add caching using canonical problem identity and a source freshness policy.
-- Treat upstream text as untrusted content; it is data, not executable instructions.
+### Correctness and provenance
+- Source adapter owns canonical question facts.
+- LLM explains; it does not invent missing source facts.
+- Written walkthrough and animation use the same trace version.
 
-### 7.3 LLM provider adapter
-- Reuse the current provider configuration abstraction where suitable.
-- Keep model selection explicit and provider-specific.
-- Validate model output against a strict schema.
-- Ensure prompts treat problem statements and examples as untrusted input data.
-- Do not log credentials or expose hidden chain-of-thought.
-
-## 8. Core data contracts
-
-### ProblemDetails
-- `number: positive integer`
-- `slug: optional string`
-- `title: non-empty string`
-- `difficulty: Easy | Medium | Hard | Unknown`
-- `statement: non-empty string`
-- `examples: list[ProblemExample]`
-- `constraints: list[string]`
-- `topic_tags: list[string]`
-- `canonical_url: valid URL`
-- `source_name: string`
-- `retrieved_at: timestamp`
-
-### LearningPathRequest
-- `problem_number: positive integer`
-- `intent: solve | prerequisites`
-- `language: optional string`
-- `learner_level: beginner | intermediate | advanced | unknown`
-
-### SolutionLearningPlan
-- `problem_summary`
-- `input_output_model`
-- `constraints_analysis`
-- `observations`
-- `approach`
-- `algorithm_steps`
-- `pseudocode`
-- `worked_trace`
-- `correctness_rationale`
-- `time_complexity`
-- `space_complexity`
-- `implementation`
-- `edge_cases`
-
-### PrerequisiteLearningPath
-- `problem_summary`
-- `concepts[]`: concept ID, name, why needed, prerequisite IDs, explanation, example, check question and expected answer.
-- `learning_order[]`: concept IDs in dependency-valid order.
-- `problem_connection`: how the prerequisite concepts support solving this problem.
-- `solution_spoiler_included: false` by default.
-
-## 9. Architecture and design constraints
-
-- Keep problem fetching and teaching generation separate.
-- Canonical facts come from the source adapter; LLMs explain but do not invent source facts.
-- Use deterministic code for validation, normalization, ordering, caching and retries.
-- Keep agents bounded to one clear pedagogical responsibility.
-- Prefer a small explicit workflow over a large multi-agent graph for the first milestone.
-- Preserve source provenance through every stage.
-- Keep the app independently testable without live LeetCode or LLM calls.
-
-## 10. Non-functional requirements
-
-### Performance
-- Problem lookup should use bounded network timeouts.
-- Cache frequently requested problem metadata.
-- Generation is asynchronous-ready but synchronous response is acceptable for the first vertical slice if provider latency is manageable.
+### Safety
+- Treat problem text as untrusted data.
+- Never execute unrestricted LLM-generated code.
+- Use trusted renderer templates and schema-validated data.
+- Isolate render workers and enforce resource limits.
+- Keep credentials out of source control and logs.
 
 ### Reliability
-- External requests have bounded retries and clear failure classification.
-- A model/provider failure must not discard a successful lookup.
-- No fabricated problem data on source errors.
+- Bounded retries and timeouts for external services.
+- Persist job state and diagnostics.
+- Animation failure must not invalidate a successful lesson.
+- Never mark an empty or corrupt video as successful.
 
-### Security
-- Secrets are environment-configured and never committed.
-- Retrieved statements are treated as untrusted data.
-- No arbitrary code execution or code submission in this milestone.
-- Errors and logs redact credentials and sensitive provider payloads.
+### Usability
+- Language and both proficiency axes are visible and editable before generation.
+- The two intents are clearly distinct.
+- Beginner programming users receive syntax explanations for their selected language.
+- Text and code remain accessible when animation is unavailable.
 
-### Maintainability
-- Provider and problem source are behind adapters.
-- Schemas are versionable and strict.
-- Tests use fake adapters and fake models.
+## 11. Testing and acceptance criteria
 
-### Accessibility and usability
-- The two learning choices must be visually and semantically distinct.
-- Problem details must remain readable on mobile and desktop.
-- Errors must explain how to recover.
+- Lookup tests cover valid, invalid, missing, rate-limited and unavailable problems.
+- Configuration tests cover all four languages and all 3×3 proficiency combinations.
+- Prompt/contract tests verify language-specific code and independent proficiency adaptation.
+- Beginner syntax tests verify explanations for constructs actually present in the generated code.
+- Workflow tests prove only one selected learning path executes.
+- Prerequisite tests verify dependency order and absence of solution spoilers.
+- Trace tests verify deterministic state ordering.
+- Storyboard tests verify schema, references and trace consistency.
+- Renderer tests use small fixture scenes and cover success, timeout, crash and corrupt output.
+- QA tests cover empty frames, clipping, invalid dimensions and duration.
+- End-to-end tests cover lookup → config → solve/prerequisites → lesson → animation status.
+- Animation failure tests verify the text lesson remains usable.
 
-## 11. Testing requirements
+The MVP is accepted when a learner can enter a problem number, configure language and both skill levels, choose either learning intent, and receive a validated personalized lesson with an animation artifact when rendering succeeds.
 
-- Unit tests for numeric input validation and problem normalization.
-- Contract tests for not-found, rate-limited, unavailable and malformed-source responses.
-- Schema tests for both learning artifact types.
-- Prompt tests confirming problem statement content is treated as data.
-- Workflow tests verifying only the selected path executes.
-- Tests confirming prerequisite output contains no full solution by default.
-- End-to-end tests for valid lookup → confirmation → solve path.
-- End-to-end tests for valid lookup → confirmation → prerequisite path.
-- Regression tests for current provider configuration behavior when reused.
+## 12. Delivery roadmap
 
-## 12. Risks and mitigations
-
-| Risk | Mitigation |
-|---|---|
-| LeetCode source changes | Isolate source access behind adapter and maintain fixtures |
-| Rate limits or blocked upstream requests | Timeout, bounded retry, cache, clear unavailable state |
-| Incorrect LLM-generated explanations | Structured output, test fixtures, explicit correctness section |
-| Prerequisite path becomes generic | Require per-concept rationale linking concept to problem |
-| Prerequisite flow spoils solution | Explicit spoiler constraint and regression tests |
-| Scope expands too early | Enforce the deferred-scope list until MVP acceptance criteria pass |
-
-## 13. Implementation roadmap
-
-### Milestone 1 — Problem retrieval
-- Define source adapter and `ProblemDetails`.
-- Implement numeric validation and lookup endpoint.
-- Add normalization, attribution, caching and deterministic tests.
-
-### Milestone 2 — Problem review and intent selection
-- Build details/confirmation screen.
-- Add explicit Solve and Prerequisites actions.
-- Add request/response contracts.
-
-### Milestone 3 — Solve learning path
-- Implement `SolutionLearningPlan`.
-- Generate and validate a solution explanation.
-- Add traces, complexity reasoning and implementation output.
-
-### Milestone 4 — Prerequisite learning path
-- Implement concept/dependency schema.
-- Generate the learning sequence and examples.
-- Validate ordering and prevent solution spoilers.
-
-### Milestone 5 — End-to-end hardening
-- Failure-state UX, caching, observability and integration tests.
-- Confirm the MVP acceptance criteria before adding other capabilities.
-
-## 14. Definition of done
-
-The first milestone is complete when a learner can enter a valid LeetCode problem number, verify the correct problem details, choose either Solve or Prerequisites, and receive the corresponding validated learning experience. All failure cases must be explicit and tested. No video pipeline or broad free-form learning mode is required for this release.
+1. Canonical problem lookup and normalized schema.
+2. Learner configuration and UI.
+3. Solve and prerequisite workflows.
+4. Language-specific code and beginner syntax explanations.
+5. Shared algorithm trace and fixture-based tests.
+6. Typed storyboard planner and validation.
+7. Isolated Manim renderer, asynchronous job lifecycle and QA.
+8. Animation player, failure fallback and end-to-end acceptance tests.

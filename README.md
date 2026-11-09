@@ -1,182 +1,201 @@
-# Didactics — LeetCode Learning Agent
+# Didactics — Personalized LeetCode Tutor
 
-Didactics helps a learner understand a LeetCode problem from its **problem number**. The first milestone deliberately focuses on one complete learning journey rather than a broad, multi-purpose content-generation platform.
+Didactics turns a LeetCode problem number into a personalized, visual learning session. The learner enters a question number, reviews the canonical problem, configures their programming language and two separate proficiency levels, and chooses whether to learn the solution or the prerequisites.
 
-A learner enters a LeetCode question number. Didactics retrieves and normalizes the problem details, presents them for confirmation, and then asks what kind of help the learner wants:
+The MVP is one focused journey:
 
-1. **Solve the problem** — understand the problem, reason toward an approach, inspect an algorithm walkthrough, and learn complexity and implementation details.
-2. **Learn the prerequisites** — build the concepts and data-structure/algorithm foundations needed to solve the problem, in a sensible order, before attempting the solution.
-
-The product is designed to be extended later. The current milestone should be small, reliable, testable, and useful end-to-end.
+1. Enter a LeetCode problem number.
+2. Retrieve and display the canonical problem details.
+3. Choose a coding language: **Java, Python, C, or C++**.
+4. Set **DSA proficiency** and **programming-language proficiency** independently.
+5. Choose **Solve this problem** or **Teach me the prerequisites**.
+6. Learn through a tailored explanation, language-specific code, and an automatically generated algorithm animation.
 
 ---
 
-## MVP user journey
+## Core learner journey
 
 ```mermaid
 flowchart TD
-    A([Learner opens Didactics]) --> B[Enter LeetCode problem number]
-    B --> C[Validate number and fetch problem]
-    C --> D{Problem found?}
-    D -->|No| E[Explain not found / retry]
+    A([Open Didactics]) --> B[Enter LeetCode problem number]
+    B --> C[Fetch canonical problem details]
+    C --> D{Problem found and valid?}
+    D -->|No| E[Show retryable error]
     E --> B
-    D -->|Yes| F[Normalize and display problem details]
-    F --> G{Learner chooses a path}
-    G -->|Solve this problem| H[Build solution learning plan]
-    G -->|Learn prerequisites| I[Build prerequisite learning path]
-    H --> J[Teach approach, walkthrough, correctness and complexity]
-    I --> K[Teach concepts in dependency order with examples]
-    J --> L([Learning session])
-    K --> L
+    D -->|Yes| F[Review title, statement, examples, constraints, difficulty, tags]
+    F --> G[Choose programming language]
+    G --> G1[Java / Python / C / C++]
+    G1 --> H[Set DSA proficiency]
+    H --> H1[Beginner / Intermediate / Advanced]
+    H1 --> I[Set programming proficiency]
+    I --> I1[Beginner / Intermediate / Advanced]
+    I1 --> J{Choose learning goal}
+    J -->|Solve| K[Solution teaching path]
+    J -->|Prerequisites| L[Prerequisite learning path]
+    K --> M[Personalized explanation + code]
+    L --> N[Concept lessons + examples + checks]
+    M --> O[Generate algorithm animation]
+    N --> P[Optional concept animations]
+    O --> Q[Render and validate animation]
+    P --> Q
+    Q --> R[Interactive visual learning session]
 ```
 
-## Scope
+## Learner configuration
 
-### Included in this milestone
+Language and proficiency are explicit request inputs, not hidden assumptions.
 
-- Accept a LeetCode question number as the primary input.
-- Validate the input and retrieve the matching problem.
-- Show the canonical title, problem number, difficulty, description, examples, constraints, and topic tags when available from the source.
-- Preserve source attribution and distinguish fetched facts from AI-generated teaching content.
-- Ask the learner to select one of two explicit learning intents.
-- Generate a solution-oriented learning experience or a prerequisite-first learning experience.
-- Use structured, schema-validated outputs rather than relying on free-form model responses.
-- Handle invalid numbers, missing problems, unavailable sources, rate limits, and model failures clearly.
-- Keep provider/model selection configurable and keep tests deterministic with mocked external services.
+| Setting | Choices | How Didactics uses it |
+|---|---|---|
+| Programming language | Java, Python, C, C++ | Generates idiomatic code, syntax, examples, and animation labels in the selected language |
+| DSA proficiency | Beginner, Intermediate, Advanced | Controls depth of data-structure and algorithm explanations |
+| Programming proficiency | Beginner, Intermediate, Advanced | Controls how much language syntax and programming fundamentals are explained |
 
-### Explicitly deferred
+The two proficiency levels must remain independent. A learner may know Java syntax well but be new to DSA, or understand algorithms but be new to C++.
 
-- Arbitrary natural-language topic exploration.
-- Multi-platform coding problem ingestion.
-- User profiles, streaks, social features, leaderboards, and progress analytics.
-- Automatic code submission to LeetCode.
-- Video/Manim generation, narration, TTS, subtitles, and media rendering.
-- Multiple specialized agents without a demonstrated need.
-- Broad web research unrelated to the selected problem.
+**Beginner programming proficiency** triggers explicit syntax teaching alongside the code: variable declarations, types, loops, conditionals, functions/methods, collections/arrays, references/pointers where relevant, standard-library calls, and language-specific conventions. Explain the syntax used in the actual solution, not an unrelated full-language tutorial. Intermediate learners receive explanations of non-obvious constructs and APIs. Advanced learners receive concise idiomatic code and focus on algorithmic trade-offs.
 
-## Product behavior
+## The two learning paths
 
-### 1. Problem lookup
+### A. Solve this problem
 
-The user enters an integer problem number, for example `1`. The application validates the format, calls a problem-source adapter, and returns a normalized `ProblemDetails` object.
+- Restate the task and identify inputs, outputs, and constraints.
+- Explain intuition and key observations at the selected DSA level.
+- Compare brute force and optimized approaches where useful.
+- Derive the chosen algorithm step by step.
+- Generate code in the selected language.
+- Adapt syntax detail to programming proficiency.
+- Walk through a sample input and edge cases.
+- Explain correctness and time/space complexity.
+- Generate an animation storyboard and visual trace for the algorithm.
 
-The lookup layer must not invent problem details. It should retain canonical source identifiers/URLs and report when a field is unavailable. If the upstream source cannot be reached, show a recoverable error rather than fabricating a response.
+### B. Teach me the prerequisites
 
-### 2. Problem confirmation
+- Identify the concepts required for this particular problem.
+- Build a dependency graph and order concepts from foundational to advanced.
+- Explain why each concept matters to the target question.
+- Teach each concept at the selected DSA level.
+- Include standalone examples and quick knowledge checks.
+- Explain language syntax used in prerequisite examples according to programming proficiency.
+- Generate small concept animations when visualizing a concept is genuinely useful.
+- End with a bridge back to the target problem without revealing the full solution by default.
 
-Before spending tokens on teaching, display the problem summary:
+## Animation generation pipeline
 
-- Number and title
-- Difficulty
-- Statement
-- Examples and explanations
-- Constraints
-- Topic tags
-- Canonical LeetCode URL
+Animation is a first-class part of the product—not a decorative afterthought. The teaching generator produces a structured, deterministic storyboard before any renderer is called.
 
-Allow the user to go back and enter another number.
+```mermaid
+flowchart TD
+    A[Validated solution or concept lesson] --> B[Extract algorithm states and teaching beats]
+    B --> C[Create structured animation storyboard]
+    C --> D[Define scene, objects, labels, narration captions and transitions]
+    D --> E[Generate renderer instructions / animation code]
+    E --> F[Render frames and assemble video]
+    F --> G[Automated visual and timing QA]
+    G --> H{Passes validation?}
+    H -->|No| I[Return diagnostics to storyboard/code stage]
+    I --> C
+    H -->|Yes| J[Store animation artifact and metadata]
+    J --> K[Attach animation to lesson timeline]
+    K --> L[Player: play, pause, step, replay]
+```
 
-### 3. Learning-path selection
+Animation requirements:
+- Use the same algorithm trace/state data as the written explanation and code walkthrough.
+- Show meaningful states: arrays, pointers, indices, hash maps, stacks/queues, trees/graphs, recursion frames, or other relevant structures.
+- Make each state transition understandable, with highlights, labels, and a short caption.
+- Use language-agnostic algorithm state for rendering; code snippets remain language-specific.
+- Generate scenes from a typed storyboard schema, not arbitrary unconstrained model code.
+- Validate storyboard references and state transitions before rendering.
+- Run rendering in an isolated worker with resource/time limits.
+- Check output dimensions, duration, frame count, empty/corrupt output, and basic visual consistency.
+- Support deterministic re-rendering from a saved storyboard.
+- If rendering fails, preserve the lesson and show the textual walkthrough; never block learning on animation availability.
 
-Present two clear choices:
-
-**Solve this problem**
-- Restate the task and identify inputs/outputs.
-- Explain key observations and constraints.
-- Derive an appropriate approach, from intuition to optimized solution.
-- Walk through an example step by step.
-- Explain correctness intuition/proof.
-- Explain time and space complexity.
-- Provide implementation in the selected language (language selection can default to a configured value in this MVP).
-
-**Teach me the prerequisites**
-- Identify the concepts actually needed for this problem.
-- Build a dependency-aware sequence from foundational to advanced concepts.
-- Explain why each concept is needed for this problem.
-- Teach each concept with a small independent example.
-- Include a quick knowledge check or practice prompt per concept.
-- End with a bridge that connects the prerequisites back to the target problem.
-- Do not reveal the complete solution unless the learner explicitly switches paths.
+The first implementation can use Manim for programmatic mathematical/algorithmic scenes. Keep the renderer behind an adapter so another renderer can be added later. TTS/narration can be a later enhancement; MVP captions and on-screen explanations are sufficient.
 
 ## Architecture
 
-| Layer | Responsibility | Initial implementation direction |
-|---|---|---|
-| Client | Number input, problem summary, path selection, learning experience | Keep the current UI approach where reusable; avoid redesigning for deferred features |
-| API | Validate requests and expose lookup/learning endpoints | FastAPI |
-| Problem data | Fetch and normalize canonical LeetCode problem metadata | Pluggable problem-source adapter; cache successful lookups |
-| Orchestration | Route the selected learning intent | Small explicit workflow; LangGraph only where it materially helps |
-| Teaching | Generate solution plan or prerequisite path | Existing provider abstraction and structured LLM outputs |
-| Validation | Validate IDs, schemas, required fields, and output consistency | Deterministic Python + Pydantic |
-| Storage/cache | Cache problem metadata and optionally session artifacts | Defer persistent DB until session requirements justify it |
+| Layer | Responsibility |
+|---|---|
+| Client | Problem entry, details review, language/proficiency settings, path selection, lesson and animation player |
+| Problem API | Validate number and retrieve canonical LeetCode metadata |
+| Learner profile/config | Validate language, DSA level, and programming level |
+| Learning orchestrator | Route exactly one selected learning path |
+| Solution teaching generator | Approach, proof, complexity, trace, code |
+| Prerequisite curriculum generator | Concept dependencies, ordered lessons, examples and checks |
+| Code explainer | Language-specific syntax annotations controlled by programming proficiency |
+| Animation planner | Convert validated lesson/trace into storyboard schema |
+| Animation renderer | Render storyboard to video and produce metadata |
+| QA/Artifact service | Validate render, retain diagnostics, expose playable artifact |
+| Cache/storage | Cache problem details and store storyboard/render artifacts |
 
-### Important boundary
+## API contracts
 
-The problem-source adapter is the authority for the question's canonical facts. The language model is responsible for explaining and teaching those facts. The model must not be asked to reconstruct a problem statement from its number when the source lookup fails.
+### Retrieve problem
 
-## Proposed API contract
+`GET /api/problems/{number}`
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| `GET` | `/health` | Service health |
-| `GET` | `/api/problems/{number}` | Fetch normalized problem details |
-| `POST` | `/api/learning-paths` | Generate selected learning path |
+Returns canonical source data: number, title, difficulty, statement, examples, constraints, tags, URL and provenance.
 
-Example learning-path request:
+### Generate learning session
+
+`POST /api/learning-sessions`
+
+Example:
 
 ```json
 {
   "problem_number": 1,
   "intent": "solve",
   "language": "java",
-  "learner_level": "beginner"
+  "dsa_proficiency": "beginner",
+  "programming_proficiency": "beginner",
+  "animation": true
 }
 ```
 
-`intent` is either `solve` or `prerequisites`. The prerequisites path must not silently return a solution walkthrough.
+Allowed values:
+- `intent`: `solve` | `prerequisites`
+- `language`: `java` | `python` | `c` | `cpp`
+- `dsa_proficiency`: `beginner` | `intermediate` | `advanced`
+- `programming_proficiency`: `beginner` | `intermediate` | `advanced`
 
-## Suggested structured artifacts
+### Suggested artifacts
 
-- `ProblemDetails`: number, slug, title, difficulty, statement, examples, constraints, topic tags, canonical URL, source metadata.
-- `LearningPathRequest`: problem number, selected intent, optional language, learner level.
-- `SolutionLearningPlan`: task model, observations, approach steps, trace, correctness rationale, complexity, implementation outline.
-- `PrerequisiteLearningPath`: ordered concepts, dependencies, reason each concept matters, explanations, examples, checks, target-problem bridge.
-- `LearningSession`: problem reference, chosen intent, generated artifact, provider/model metadata, timestamps, and status.
+- `ProblemDetails`: canonical problem metadata and provenance.
+- `LearnerConfig`: language, DSA proficiency, programming proficiency.
+- `SolutionLearningPlan`: explanation, algorithm, proof, complexity, language-specific code, syntax annotations, trace.
+- `PrerequisiteLearningPath`: concept dependency graph, ordered lessons, examples, checks, target-problem bridge.
+- `AnimationStoryboard`: scenes, states, transitions, highlights, captions, timing, renderer settings.
+- `AnimationArtifact`: artifact URI, format, dimensions, duration, frame rate, storyboard version, render status and QA report.
+- `LearningSession`: problem, intent, learner config, lesson artifacts and animation status.
 
-Use strict validation and explicit enums. Avoid returning raw hidden model reasoning; return concise, observable explanations and educational rationale.
+## Scope boundaries
 
-## Reliability and quality requirements
+Included in the focused MVP: problem-number lookup, problem confirmation, language selection, independent proficiency settings, two learning paths, tailored code/syntax explanations, structured animation storyboards, and a first renderer integration.
 
-- A valid number must map to the correct problem or return an explicit not-found/unavailable outcome.
-- Problem metadata must be traceable to the source.
-- Never fabricate a problem statement, constraints, examples, or tags.
-- All generated artifacts must validate against their schemas before reaching the UI.
-- Prerequisite concepts must be relevant to the selected problem and ordered by dependency.
-- The solve and prerequisite paths must be behaviorally distinct.
-- External services must be wrapped behind adapters so they can be mocked in tests.
-- Keep provider credentials in environment variables; never commit secrets.
-- Add bounded timeouts/retries for external requests and clear user-facing errors.
-- Cache by canonical problem identity and source version where possible.
+Deferred until the core journey works: user accounts and progress analytics, other coding platforms, automatic LeetCode submissions, social features, multi-agent expansion, TTS/voice narration, and arbitrary free-form topic discovery.
 
-## Repository status and implementation plan
+## Reliability and safety
 
-This README describes the **new focused product direction**, not a claim that every listed endpoint and feature is already implemented. The current source tree is preserved on `archive/current-project-2026-11`. The `main` branch is now the focused product specification and architecture baseline.
+- The source adapter—not the LLM—is authoritative for problem facts.
+- Do not invent problem statements if lookup fails.
+- Validate all learner settings and generated artifacts with strict schemas.
+- Treat retrieved problem text as untrusted data.
+- Do not execute arbitrary model-generated code; renderer instructions must be constrained to a safe scene schema/templates.
+- Render in an isolated, resource-limited worker.
+- Keep credentials in environment variables.
+- Animation failure must degrade gracefully to the validated text/code lesson.
 
-Recommended implementation order:
+## Implementation order
 
-1. Problem-number validation and canonical problem lookup adapter.
-2. `ProblemDetails` schema and lookup endpoint with deterministic tests.
-3. Problem confirmation UI.
-4. Two-option learning-path selection.
-5. Solution-plan generator with schema validation.
-6. Prerequisite-path generator with dependency ordering and schema validation.
-7. End-to-end tests covering both paths and upstream failures.
+1. Problem-number lookup and normalized problem schema.
+2. Learner configuration: language + two independent proficiency levels.
+3. Problem review UI and two-path selection.
+4. Solution and prerequisite outputs with proficiency-aware explanations.
+5. Shared algorithm trace and typed storyboard schema.
+6. Manim renderer adapter, asynchronous render job, QA and player.
+7. End-to-end tests for all languages, proficiency combinations, both paths and render failure.
 
-## Development principles
-
-- Ship one complete journey before adding more domains.
-- Prefer deterministic code for fetching, parsing, validation, and caching.
-- Use an LLM only for pedagogical reasoning and explanations.
-- Keep agents small and output contracts explicit.
-- Build against mocked source/model responses first; reserve live API tests for opt-in integration checks.
-- Do not add Manim, TTS, video rendering, databases, or multi-agent complexity to this milestone.
+This README is the product specification and implementation baseline; it does not claim that these features are already implemented in the source code.
