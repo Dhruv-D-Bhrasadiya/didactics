@@ -1,22 +1,35 @@
 # Testing Didactics
 
-Run tests from the repository root with the project virtual environment:
+The focused MVP test strategy is defined here. The currently present tests exercise the archived request-understanding prototype; they do not yet test LeetCode lookup or either new learning path.
+
+## Required MVP test layers
+
+### 1. Problem lookup
+- Valid problem number maps to the expected normalized problem fixture.
+- Blank, malformed, zero, and negative IDs are rejected before network access.
+- Not-found, upstream timeout, rate limit, malformed payload, and missing optional metadata are handled distinctly.
+- Source title, statement, examples, constraints, tags, URL, and retrieval provenance are preserved.
+
+### 2. Learning path contracts
+- `solve` returns a valid `SolutionLearningPlan`.
+- `prerequisites` returns valid concepts, dependency references, and a dependency-valid order.
+- Prerequisite output does not include the full target solution by default.
+- Invalid model output is rejected and can only be retried within a bounded policy.
+
+### 3. Workflow behavior
+- Lookup failure never invokes a teaching model.
+- Exactly one selected learning path runs per request.
+- A generation failure does not discard already fetched problem details.
+- Both paths are covered with fake source adapters and fake model clients.
+
+## Current legacy prototype tests
+
+Run the existing tests from the repository root:
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest backend.test.test_intent_analyzer_agent -v
+.\\.venv\\Scripts\\python.exe -m unittest backend.test.test_intent_analyzer_agent -v
+.\\.venv\\Scripts\\python.exe -m unittest discover -s backend/test -p "test_*.py" -v
+.\\.venv\\Scripts\\python.exe -m compileall -q backend
 ```
 
-The intent-agent tests use a fake LLM, so they do not make API requests or require a configured API key.
-
-Compile the backend package and check imports:
-
-```powershell
-.\.venv\Scripts\python.exe -m compileall -q backend
-.\.venv\Scripts\python.exe -c "from backend.app.agents.intent_analyzer_agent import RequestUnderstandingAgent; from backend.app.schemas import RequestUnderstanding; print('imports ok')"
-```
-
-Run the full discovered test suite:
-
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s backend/test -p "test_*.py" -v
-```
+The existing intent-agent tests use a fake LLM and do not make API requests or require a configured API key. These are regression tests for the preserved prototype, not proof that the LeetCode MVP is implemented.
