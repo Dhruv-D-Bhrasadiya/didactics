@@ -1,322 +1,182 @@
-# Didactics
+# Didactics — LeetCode Learning Agent
 
-Didactics is an autonomous AI agent system that transforms complex programming and conceptual topics into synchronized audio-visual explainer videos. By combining large language models (LLMs), code generation engines (`manim`), and text-to-speech pipelines, Didactics writes animation code, renders mathematical and programmatic concepts, and generates professional voiceover explanations on demand.
+Didactics helps a learner understand a LeetCode problem from its **problem number**. The first milestone deliberately focuses on one complete learning journey rather than a broad, multi-purpose content-generation platform.
 
----
+A learner enters a LeetCode question number. Didactics retrieves and normalizes the problem details, presents them for confirmation, and then asks what kind of help the learner wants:
 
-## Features
+1. **Solve the problem** — understand the problem, reason toward an approach, inspect an algorithm walkthrough, and learn complexity and implementation details.
+2. **Learn the prerequisites** — build the concepts and data-structure/algorithm foundations needed to solve the problem, in a sensible order, before attempting the solution.
 
-- **Natural Language Input**: Describe any concept or problem (e.g., data structures, algorithms, system design).
-- **Automated Manim Script Generation**: Uses LangGraph agents to write, validate, and execute Manim (Mathematical Animation Engine) Python scripts.
-- **Audio Synchronization**: Generates and stitches professional voiceover audio mapped to visual keyframes.
-- **Caching & State Management**: Leverages Redis for fast retrieval of previously rendered explanations and MySQL for robust user history and asset persistence.
-- **Modular Agent Framework**: Built with LangChain and LangGraph for reliable, multi-step agent reasoning loops (Plan → Code → Test → Render → Synthesize).
+The product is designed to be extended later. The current milestone should be small, reliable, testable, and useful end-to-end.
 
 ---
 
-## Architecture & Tech Stack
+## MVP user journey
 
-| Layer | Technology | Purpose |
-| :--- | :--- | :--- |
-| **Frontend** | HTML, CSS, JavaScript | Interactive user dashboard, video player, and prompt submission interface |
-| **Backend** | Python, FastAPI | Asynchronous API gateway, execution runner, and orchestration server |
-| **Agent Framework** | LangChain, LangGraph | Multi-agent workflow, state management, and tool routing |
-| **LLM Providers** | Groq, Gemini, OpenAI, Hugging Face | Code generation, planning, and script narration text |
-| **Animation Engine** | Manim | Programmatic generation of high-fidelity mathematical/code animations |
-| **Databases** | MySQL, Redis | Persistent relational storage and caching/rate-limiting |
-
----
-
-
-## Diagram
 ```mermaid
-graph TD
-
-    %% =========================
-    %% STYLING
-    %% =========================
-    classDef client fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#000;
-    classDef gateway fill:#FFF3E0,stroke:#EF6C00,stroke-width:2px,color:#000;
-    classDef storage fill:#EDE7F6,stroke:#5E35B1,stroke-width:2px,color:#000;
-    classDef agent fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#000;
-    classDef validation fill:#FFFDE7,stroke:#F9A825,stroke-width:2px,color:#000;
-    classDef engine fill:#FCE4EC,stroke:#C2185B,stroke-width:2px,color:#000;
-    classDef output fill:#E0F2F1,stroke:#00695C,stroke-width:2px,color:#000;
-    classDef error fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#000;
-
-    %% =========================
-    %% CLIENT LAYER
-    %% =========================
-    User([User Client UI]):::client
-    VideoPlayer([Final Explainer Video]):::output
-
-    %% =========================
-    %% API / BACKEND
-    %% =========================
-    FastAPI[FastAPI API Gateway]:::gateway
-    Request[Request Manager]:::gateway
-    Cache[(Redis Cache)]:::storage
-    MySQL[(MySQL Database)]:::storage
-
-    %% =========================
-    %% LANGGRAPH ORCHESTRATOR
-    %% =========================
-    subgraph LangGraph["LangGraph Multi-Agent Orchestrator"]
-
-        State["Shared Workflow State"]:::agent
-
-        subgraph Planning["1. Planning Agents"]
-            Intent[Request Understanding Agent<br/>Identify goal, learner level, scope, concepts]:::agent
-            Topic[Topic Decomposer Agent<br/>Extract concepts & problems]:::agent
-            Structure[Chapter Planner Agent<br/>Create video chapters]:::agent
-            Learning[Learning Objective Agent<br/>Define teaching outcomes]:::agent
-        end
-
-        subgraph Content["2. Educational Content Agents"]
-            Concept[Concept Explanation Agent<br/>Write conceptual explanation]:::agent
-            Algorithm[Algorithm Agent<br/>Design step-by-step solution]:::agent
-            Example[Example Agent<br/>Create examples & edge cases]:::agent
-            DryRun[Dry Run Agent<br/>Generate execution trace]:::agent
-        end
-
-        subgraph Visual["3. Visual Planning Agents"]
-            VisualPlanner[Visual Planner Agent<br/>Map concepts to visuals]:::agent
-            ManimPlanner[Manim Scene Agent<br/>Design animation scenes]:::agent
-            CodeVisual[Code Visualization Agent<br/>Design code highlighting]:::agent
-            Timing[Timing Agent<br/>Estimate scene durations]:::agent
-        end
-
-        subgraph Generation["4. Generation Agents"]
-            Script[Manim Code Generator Agent<br/>Generate Python animation code]:::agent
-            Narration[Narration Agent<br/>Generate voiceover script]:::agent
-            Subtitle[Subtitle Agent<br/>Generate subtitle timeline]:::agent
-        end
-
-        subgraph Quality["5. Validation Agents"]
-            Syntax[Syntax Validator Agent<br/>Check Python syntax]:::validation
-            Safety[Safety Validator Agent<br/>Check unsafe operations]:::validation
-            VisualTest[Animation Test Agent<br/>Validate Manim scenes]:::validation
-            ContentTest[Content Validator Agent<br/>Check correctness]:::validation
-            SyncTest[Sync Validator Agent<br/>Check audio/visual timing]:::validation
-        end
-
-        subgraph Recovery["6. Recovery / Refinement"]
-            CodeFix[Code Repair Agent<br/>Fix rendering errors]:::error
-            ContentFix[Content Refinement Agent<br/>Fix educational issues]:::error
-            TimingFix[Timing Correction Agent<br/>Fix synchronization]:::error
-        end
-    end
-
-    %% =========================
-    %% ASSET GENERATION PIPELINE
-    %% =========================
-    subgraph Execution["Asset Generation Pipeline"]
-
-        TTS[TTS Engine<br/>Generate Voiceover Audio]:::engine
-        Manim[Manim Rendering Engine<br/>Render Animation Frames]:::engine
-        FFmpeg[FFmpeg Processor<br/>Combine Audio + Video]:::engine
-        Subtitles[Subtitle Processor<br/>Burn / Attach Subtitles]:::engine
-        Thumbnail[Thumbnail Generator]:::engine
-    end
-
-    %% =========================
-    %% INPUT FLOW
-    %% =========================
-    User -->|1. Submit Prompt| FastAPI
-    FastAPI -->|2. Create Job| Request
-    Request -->|3. Check Existing Result| Cache
-
-    Cache -->|Cache Hit| VideoPlayer
-    Cache -->|Cache Miss| State
-
-    %% =========================
-    %% PLANNING FLOW
-    %% =========================
-    State --> Intent
-    Intent --> Topic
-    Topic --> Structure
-    Structure --> Learning
-
-    Learning --> Concept
-    Learning --> Algorithm
-    Learning --> Example
-    Learning --> DryRun
-
-    %% =========================
-    %% CONTENT → VISUAL FLOW
-    %% =========================
-    Concept --> VisualPlanner
-    Algorithm --> VisualPlanner
-    Example --> VisualPlanner
-    DryRun --> VisualPlanner
-
-    VisualPlanner --> ManimPlanner
-    VisualPlanner --> CodeVisual
-    VisualPlanner --> Timing
-
-    %% =========================
-    %% GENERATION FLOW
-    %% =========================
-    ManimPlanner --> Script
-    CodeVisual --> Script
-
-    Concept --> Narration
-    Algorithm --> Narration
-    Example --> Narration
-    DryRun --> Narration
-
-    Timing --> Narration
-    Timing --> Subtitle
-
-    Script --> Syntax
-    Script --> Safety
-
-    Narration --> ContentTest
-    Subtitle --> SyncTest
-
-    %% =========================
-    %% VALIDATION FLOW
-    %% =========================
-    Syntax -->|Approved| VisualTest
-    Syntax -->|Failed| CodeFix
-
-    Safety -->|Approved| VisualTest
-    Safety -->|Failed| CodeFix
-
-    ContentTest -->|Approved| SyncTest
-    ContentTest -->|Failed| ContentFix
-
-    VisualTest -->|Approved| Manim
-    VisualTest -->|Failed| CodeFix
-
-    CodeFix --> Script
-    ContentFix --> Narration
-    ContentFix --> Concept
-    TimingFix --> Timing
-
-    %% =========================
-    %% AUDIO / VIDEO GENERATION
-    %% =========================
-    Narration --> TTS
-    TTS --> SyncTest
-
-    Manim -->|Rendered Video| FFmpeg
-    TTS -->|Audio Track| FFmpeg
-    Subtitle -->|Subtitle Timeline| Subtitles
-
-    SyncTest -->|Approved| FFmpeg
-    SyncTest -->|Failed| TimingFix
-
-    %% =========================
-    %% FINAL ASSET PROCESSING
-    %% =========================
-    FFmpeg --> Subtitles
-    Subtitles --> Thumbnail
-
-    Thumbnail -->|Final MP4 + Metadata| FastAPI
-
-    %% =========================
-    %% PERSISTENCE
-    %% =========================
-    FastAPI -->|Save Job & Metadata| MySQL
-    FastAPI -->|Cache Final Video| Cache
-
-    %% =========================
-    %% FINAL RESPONSE
-    %% =========================
-    FastAPI -->|Stream / Return Video URL| VideoPlayer
-    VideoPlayer --> User
-
-    %% =========================
-    %% FEEDBACK / ITERATION
-    %% =========================
-    User -.->|Regenerate / Improve| FastAPI
-    FastAPI -.-> State
+flowchart TD
+    A([Learner opens Didactics]) --> B[Enter LeetCode problem number]
+    B --> C[Validate number and fetch problem]
+    C --> D{Problem found?}
+    D -->|No| E[Explain not found / retry]
+    E --> B
+    D -->|Yes| F[Normalize and display problem details]
+    F --> G{Learner chooses a path}
+    G -->|Solve this problem| H[Build solution learning plan]
+    G -->|Learn prerequisites| I[Build prerequisite learning path]
+    H --> J[Teach approach, walkthrough, correctness and complexity]
+    I --> K[Teach concepts in dependency order with examples]
+    J --> L([Learning session])
+    K --> L
 ```
 
+## Scope
 
----
+### Included in this milestone
 
-## Getting Started
+- Accept a LeetCode question number as the primary input.
+- Validate the input and retrieve the matching problem.
+- Show the canonical title, problem number, difficulty, description, examples, constraints, and topic tags when available from the source.
+- Preserve source attribution and distinguish fetched facts from AI-generated teaching content.
+- Ask the learner to select one of two explicit learning intents.
+- Generate a solution-oriented learning experience or a prerequisite-first learning experience.
+- Use structured, schema-validated outputs rather than relying on free-form model responses.
+- Handle invalid numbers, missing problems, unavailable sources, rate limits, and model failures clearly.
+- Keep provider/model selection configurable and keep tests deterministic with mocked external services.
 
-### Prerequisites
-- Python 3.10+
-- Node.js or a modern web server for frontend serving
-- MySQL Server & Redis Server
-- [Manim dependencies](https://manim.community) (Cairo, Pango, FFmpeg)
+### Explicitly deferred
 
-### Installation & Local Setup
+- Arbitrary natural-language topic exploration.
+- Multi-platform coding problem ingestion.
+- User profiles, streaks, social features, leaderboards, and progress analytics.
+- Automatic code submission to LeetCode.
+- Video/Manim generation, narration, TTS, subtitles, and media rendering.
+- Multiple specialized agents without a demonstrated need.
+- Broad web research unrelated to the selected problem.
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com
-   cd didactics
-   ```
+## Product behavior
 
-2. **Configure Environment Variables**
-   Create a `.env` file in the root backend directory:
-   ```env
-   PORT=8000
-   MYSQL_HOST=localhost
-   MYSQL_USER=root
-   MYSQL_PASSWORD=your_password
-   MYSQL_DB=didactics_db
-   REDIS_URL=redis://localhost:6379
-   OPENAI_API_KEY=your_openai_key
-   GROQ_API_KEY=your_groq_key
-   ```
+### 1. Problem lookup
 
-3. **Install Backend Dependencies**
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   ```
+The user enters an integer problem number, for example `1`. The application validates the format, calls a problem-source adapter, and returns a normalized `ProblemDetails` object.
 
-4. **Run the FastAPI Server**
-   ```bash
-   uvicorn main:app --reload --host 0.0.0.0 --port 8000
-   ```
+The lookup layer must not invent problem details. It should retain canonical source identifiers/URLs and report when a field is unavailable. If the upstream source cannot be reached, show a recoverable error rather than fabricating a response.
 
-5. **Launch the Frontend**
-   Open `frontend/index.html` via a local live server (e.g., VS Code Live Server) or host it using any static file server.
+### 2. Problem confirmation
 
-### Run Stage 1 — Request Understanding
+Before spending tokens on teaching, display the problem summary:
 
-Stage 1 uses one request-understanding agent and one structured response. It identifies the user's intent, topic, learner level, learning goal, prior knowledge, depth, constraints, deliverables, concept order, assumptions, and any clarification needed. It does not run later stages. Configure `backend/.env`, then run from the repository root:
+- Number and title
+- Difficulty
+- Statement
+- Examples and explanations
+- Constraints
+- Topic tags
+- Canonical LeetCode URL
 
-```powershell
-.\.venv\Scripts\python.exe main.py --provider groq --model "qwen/qwen3.8-27b" --query "Teach me binary search in Java"
-.\.venv\Scripts\python.exe main.py --provider gemini --model "gemini-3.6-flash" --query "Teach me binary search in Java"
-```
+Allow the user to go back and enter another number.
 
-Substitute any model ID supported by the provider/account. `--model` selects the exact model for that run; if omitted, the provider's configured model is used. `--provider` accepts `groq`, `gemini`, or `openai`, and defaults to `DEFAULT_PROVIDER`. The agent does not switch providers/models automatically, so model comparisons are explicit; provider retries are disabled and eligible key retries remain within the selected provider.
+### 3. Learning-path selection
 
-Each run's JSON output is saved under `debug/request_understanding_agent/`, with a UTC timestamp, provider, and model in its filename. It records the full validated analysis, exact prompt, raw model response, available provider token usage, and timing. Missing token counts are `null`; hidden chain-of-thought is not exposed.
+Present two clear choices:
 
-See [Stage 1 details](docs/SINGLE_AGENT.md) for setup, all fields, and model comparison behavior. The unified `RequestUnderstanding` schema includes beginner/intermediate/advanced/unknown learner levels and handles vague requests with clarification questions instead of guessing. Abbreviated analysis example:
+**Solve this problem**
+- Restate the task and identify inputs/outputs.
+- Explain key observations and constraints.
+- Derive an appropriate approach, from intuition to optimized solution.
+- Walk through an example step by step.
+- Explain correctness intuition/proof.
+- Explain time and space complexity.
+- Provide implementation in the selected language (language selection can default to a configured value in this MVP).
+
+**Teach me the prerequisites**
+- Identify the concepts actually needed for this problem.
+- Build a dependency-aware sequence from foundational to advanced concepts.
+- Explain why each concept is needed for this problem.
+- Teach each concept with a small independent example.
+- Include a quick knowledge check or practice prompt per concept.
+- End with a bridge that connects the prerequisites back to the target problem.
+- Do not reveal the complete solution unless the learner explicitly switches paths.
+
+## Architecture
+
+| Layer | Responsibility | Initial implementation direction |
+|---|---|---|
+| Client | Number input, problem summary, path selection, learning experience | Keep the current UI approach where reusable; avoid redesigning for deferred features |
+| API | Validate requests and expose lookup/learning endpoints | FastAPI |
+| Problem data | Fetch and normalize canonical LeetCode problem metadata | Pluggable problem-source adapter; cache successful lookups |
+| Orchestration | Route the selected learning intent | Small explicit workflow; LangGraph only where it materially helps |
+| Teaching | Generate solution plan or prerequisite path | Existing provider abstraction and structured LLM outputs |
+| Validation | Validate IDs, schemas, required fields, and output consistency | Deterministic Python + Pydantic |
+| Storage/cache | Cache problem metadata and optionally session artifacts | Defer persistent DB until session requirements justify it |
+
+### Important boundary
+
+The problem-source adapter is the authority for the question's canonical facts. The language model is responsible for explaining and teaching those facts. The model must not be asked to reconstruct a problem statement from its number when the source lookup fails.
+
+## Proposed API contract
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/health` | Service health |
+| `GET` | `/api/problems/{number}` | Fetch normalized problem details |
+| `POST` | `/api/learning-paths` | Generate selected learning path |
+
+Example learning-path request:
 
 ```json
 {
-  "request_summary": "Learn binary search in Python",
-  "request_type": "learn",
-  "domain": "computer science",
-  "topic": "binary search",
-  "learning_goal": "Understand and implement binary search",
-  "learner_level": "beginner",
-  "explanation_depth": "detailed",
-  "programming_language": "Python",
-  "concepts": ["sorted arrays", "binary search loop", "complexity"],
-  "concept_order": ["sorted arrays", "binary search loop", "complexity"],
-  "deliverables": ["explanation", "worked example", "Python implementation"],
-  "clarification_needed": false,
-  "assumptions": [],
-  "confidence": 0.96,
-  "decision_summary": "The request asks to learn binary search using Python."
+  "problem_number": 1,
+  "intent": "solve",
+  "language": "java",
+  "learner_level": "beginner"
 }
 ```
 
-Run Stage 1 tests without making an API request:
+`intent` is either `solve` or `prerequisites`. The prerequisites path must not silently return a solution walkthrough.
 
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s backend\test -p "test_*.py" -v
-```
+## Suggested structured artifacts
+
+- `ProblemDetails`: number, slug, title, difficulty, statement, examples, constraints, topic tags, canonical URL, source metadata.
+- `LearningPathRequest`: problem number, selected intent, optional language, learner level.
+- `SolutionLearningPlan`: task model, observations, approach steps, trace, correctness rationale, complexity, implementation outline.
+- `PrerequisiteLearningPath`: ordered concepts, dependencies, reason each concept matters, explanations, examples, checks, target-problem bridge.
+- `LearningSession`: problem reference, chosen intent, generated artifact, provider/model metadata, timestamps, and status.
+
+Use strict validation and explicit enums. Avoid returning raw hidden model reasoning; return concise, observable explanations and educational rationale.
+
+## Reliability and quality requirements
+
+- A valid number must map to the correct problem or return an explicit not-found/unavailable outcome.
+- Problem metadata must be traceable to the source.
+- Never fabricate a problem statement, constraints, examples, or tags.
+- All generated artifacts must validate against their schemas before reaching the UI.
+- Prerequisite concepts must be relevant to the selected problem and ordered by dependency.
+- The solve and prerequisite paths must be behaviorally distinct.
+- External services must be wrapped behind adapters so they can be mocked in tests.
+- Keep provider credentials in environment variables; never commit secrets.
+- Add bounded timeouts/retries for external requests and clear user-facing errors.
+- Cache by canonical problem identity and source version where possible.
+
+## Repository status and implementation plan
+
+This README describes the **new focused product direction**, not a claim that every listed endpoint and feature is already implemented. The current source tree is preserved on `archive/current-project-2026-11`. The `main` branch is now the focused product specification and architecture baseline.
+
+Recommended implementation order:
+
+1. Problem-number validation and canonical problem lookup adapter.
+2. `ProblemDetails` schema and lookup endpoint with deterministic tests.
+3. Problem confirmation UI.
+4. Two-option learning-path selection.
+5. Solution-plan generator with schema validation.
+6. Prerequisite-path generator with dependency ordering and schema validation.
+7. End-to-end tests covering both paths and upstream failures.
+
+## Development principles
+
+- Ship one complete journey before adding more domains.
+- Prefer deterministic code for fetching, parsing, validation, and caching.
+- Use an LLM only for pedagogical reasoning and explanations.
+- Keep agents small and output contracts explicit.
+- Build against mocked source/model responses first; reserve live API tests for opt-in integration checks.
+- Do not add Manim, TTS, video rendering, databases, or multi-agent complexity to this milestone.
