@@ -30,16 +30,19 @@ Create `backend/.env`:
 ```env
 GEMINI_API_KEY=your_primary_key
 GEMINI_API_KEY_FALLBACK_1=your_fallback_key
+GROQ_API_KEY=your_groq_key
+DEFAULT_PROVIDER=gemini
 ```
 
 The factory also supports `GROQ_API_KEY`, `GROQ_API_KEY_FALLBACK_1`, and `OPENAI_API_KEY`.
 
-## Run the intent agent
+## Run Stage 1
 
-From the repository root, with the virtual environment active:
+From the repository root, explicitly choose the provider and model you want to test:
 
 ```powershell
-python -c "from backend.app.agents.intent_analyzer_agent import create_intent_analyzer_agent; agent = create_intent_analyzer_agent(provider='gemini'); print(agent.analyze('Teach me binary search in Python').model_dump_json(indent=2))"
+.\.venv\Scripts\python.exe main.py --provider groq --model "qwen/qwen3.8-27b" --query "Teach me binary search in Java"
+.\.venv\Scripts\python.exe main.py --provider gemini --model "gemini-3.6-flash" --query "Teach me binary search in Java"
 ```
 
-The command makes one provider request and prints validated `IntentAnalysis` JSON.
+Each successful run makes one model invocation, prints the single-schema analysis, and saves the full run and trace to `debug/request_understanding_agent/`. Provider client retries are disabled. If a provider has multiple configured keys, eligible quota/auth/connection/server errors may retry with another key for the same model. Use `--help` for CLI options; see [SINGLE_AGENT.md](SINGLE_AGENT.md) for all schema, token, and model-selection details.

@@ -1,3 +1,15 @@
-from backend.app.schemas.intent import IntentAnalysis
+from backend.app.schemas.intent import (
+    AgentExecutionTrace,
+    IntentAnalysis,
+    PromptMessage,
+    RequestUnderstanding,
+    TokenUsage,
+)
 
-__all__ = ["IntentAnalysis"]
+__all__ = [
+    "AgentExecutionTrace",
+    "IntentAnalysis",
+    "PromptMessage",
+    "RequestUnderstanding",
+    "TokenUsage",
+]

@@ -66,7 +66,7 @@ graph TD
         State["Shared Workflow State"]:::agent
 
         subgraph Planning["1. Planning Agents"]
-            Intent[Intent Analyzer Agent<br/>Identify user goal]:::agent
+            Intent[Request Understanding Agent<br/>Identify goal, learner level, scope, concepts]:::agent
             Topic[Topic Decomposer Agent<br/>Extract concepts & problems]:::agent
             Structure[Chapter Planner Agent<br/>Create video chapters]:::agent
             Learning[Learning Objective Agent<br/>Define teaching outcomes]:::agent
@@ -280,36 +280,43 @@ graph TD
 5. **Launch the Frontend**
    Open `frontend/index.html` via a local live server (e.g., VS Code Live Server) or host it using any static file server.
 
-### Run the Intent Analyzer Agent
+### Run Stage 1 — Request Understanding
 
-Run this from the repository root after installing the backend requirements and creating `backend/.env`:
+Stage 1 uses one request-understanding agent and one structured response. It identifies the user's intent, topic, learner level, learning goal, prior knowledge, depth, constraints, deliverables, concept order, assumptions, and any clarification needed. It does not run later stages. Configure `backend/.env`, then run from the repository root:
 
 ```powershell
-python -c "from backend.app.agents.intent_analyzer_agent import create_intent_analyzer_agent; agent = create_intent_analyzer_agent(provider='gemini'); print(agent.analyze('Teach me binary search in Python').model_dump_json(indent=2))"
+.\.venv\Scripts\python.exe main.py --provider groq --model "qwen/qwen3.8-27b" --query "Teach me binary search in Java"
+.\.venv\Scripts\python.exe main.py --provider gemini --model "gemini-3.6-flash" --query "Teach me binary search in Java"
 ```
 
-The agent reads `GEMINI_API_KEY` and the optional `GEMINI_API_KEY_FALLBACK_1` from `backend/.env`. It accepts any non-empty string query through `agent.analyze(query)` and returns an `IntentAnalysis` model. Use `result.model_dump()` for a Python dictionary or `result.model_dump_json(indent=2)` for JSON. `provider='groq'` and `provider='openai'` are also supported when their corresponding settings and provider dependencies are configured.
+Substitute any model ID supported by the provider/account. `--model` selects the exact model for that run; if omitted, the provider's configured model is used. `--provider` accepts `groq`, `gemini`, or `openai`, and defaults to `DEFAULT_PROVIDER`. The agent does not switch providers/models automatically, so model comparisons are explicit; provider retries are disabled and eligible key retries remain within the selected provider.
 
-Example output shape:
+Each run's JSON output is saved under `debug/request_understanding_agent/`, with a UTC timestamp, provider, and model in its filename. It records the full validated analysis, exact prompt, raw model response, available provider token usage, and timing. Missing token counts are `null`; hidden chain-of-thought is not exposed.
+
+See [Stage 1 details](docs/SINGLE_AGENT.md) for setup, all fields, and model comparison behavior. The unified `RequestUnderstanding` schema includes beginner/intermediate/advanced/unknown learner levels and handles vague requests with clarification questions instead of guessing. Abbreviated analysis example:
 
 ```json
 {
-    "domain": "computer science",
-    "subdomain": "algorithms",
-    "topic": "binary search",
-    "subtopics": ["sorted arrays"],
-    "modules": ["algorithm", "complexity"],
-    "roadmap": ["explain", "implement", "practice"],
-    "deliverables": ["worked example"],
-    "degree_of_explanation": "detailed",
-    "audience": "beginner",
-    "learning_objectives": ["implement binary search"],
-    "assumptions": []
+  "request_summary": "Learn binary search in Python",
+  "request_type": "learn",
+  "domain": "computer science",
+  "topic": "binary search",
+  "learning_goal": "Understand and implement binary search",
+  "learner_level": "beginner",
+  "explanation_depth": "detailed",
+  "programming_language": "Python",
+  "concepts": ["sorted arrays", "binary search loop", "complexity"],
+  "concept_order": ["sorted arrays", "binary search loop", "complexity"],
+  "deliverables": ["explanation", "worked example", "Python implementation"],
+  "clarification_needed": false,
+  "assumptions": [],
+  "confidence": 0.96,
+  "decision_summary": "The request asks to learn binary search using Python."
 }
 ```
 
-Run the agent tests without making an API request:
+Run Stage 1 tests without making an API request:
 
 ```powershell
-python -m unittest backend.test.test_intent_analyzer_agent -v
+.\.venv\Scripts\python.exe -m unittest discover -s backend\test -p "test_*.py" -v
 ```

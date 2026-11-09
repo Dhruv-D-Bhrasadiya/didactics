@@ -12,13 +12,13 @@ Didactics is an autonomous educational-content generation system that accepts a 
 
 This document defines the target architecture, responsibilities of each agent, contracts between stages, validation strategy, workflow state, failure handling, and implementation roadmap. It intentionally contains no implementation code.
 
-The repository currently implements only the Intent Analyzer Agent as a working prototype. The remaining components described here are target-state requirements, not claims that they already exist.
+The repository currently implements one Stage 1 Request Understanding Agent as a working prototype. The remaining components described here are target-state requirements, not claims that they already exist.
 
 ---
 
 ## 2. Current Repository Assessment
 
-The current repository has a good foundation for an agent-oriented system. The concrete implementation includes a reusable `BaseAgent`, provider-specific LLM builders, API-key rotation, prompt loading, JSON parsing, Pydantic validation, an `IntentAnalyzerAgent`, its `IntentAnalysis` schema, and unit tests. The current agent accepts a learner query and returns structured intent information. The project documentation also describes the intended end-to-end product as an explainer-video generator.
+The current repository has a good foundation for an agent-oriented system. The concrete implementation includes a reusable `BaseAgent`, provider-specific LLM builders, API-key rotation, prompt loading, JSON parsing, Pydantic validation, one `RequestUnderstandingAgent`, its unified `RequestUnderstanding` schema, debug run artifacts, and unit tests. The agent accepts a learner query and returns structured request understanding. The project documentation also describes the intended end-to-end product as an explainer-video generator.
 
 The most important architectural gap is that the current `diagram.md` describes a much larger multi-agent system than the codebase currently implements. This is normal for an early design, but it creates a risk: adding agents one-by-one without stable contracts will make the system difficult to reason about.
 
@@ -222,11 +222,13 @@ The following agents are the recommended target architecture. Some can later be 
 
 ---
 
-## 9. Stage 1 — Request Understanding Agents
+## 9. Stage 1 — Request Understanding
 
-### 9.1 Intent Analyzer Agent
+**Current implementation:** Stage 1 is implemented as one `RequestUnderstandingAgent` call, with one `RequestUnderstanding` response schema. It merges the intent, scope/requirements, and concept-mapping responsibilities below. The subsections describe the responsibilities that this single output must cover; they are not separate model agents/calls in the current implementation.
 
-**Status:** Implemented prototype.
+### 9.1 Intent Analysis Responsibility
+
+**Status:** Included in the unified Stage 1 agent.
 
 **Purpose:** Convert the learner's raw request into a structured representation of intent.
 
@@ -236,7 +238,7 @@ The following agents are the recommended target architecture. Some can later be 
 - Optional user-provided constraints.
 - Optional prior conversation/job context in future versions.
 
-**Output:** `IntentAnalysis`-type artifact containing at minimum:
+**Output:** `RequestUnderstanding` artifact containing:
 
 - Domain.
 - Subdomain.
@@ -249,12 +251,15 @@ The following agents are the recommended target architecture. Some can later be 
 - Audience.
 - Learning objectives.
 - Assumptions.
+- Learner level, prior knowledge, explicit constraints, preferred language/format, and confidence.
+- Concept inventory, learning order, and concept dependencies.
+- Ambiguity, missing information, and clarification questions.
 
-**Consumer:** Scope/requirements analysis and pedagogical planning.
+**Consumer:** Stage 2 pedagogical planning.
 
-**Important design rule:** The Intent Analyzer should not generate the complete lesson. It should understand the request and create a reliable handoff.
+**Important design rule:** The request-understanding agent should not generate the complete lesson. It should understand the request and create a reliable handoff.
 
-**Current implementation assessment:** The repository's Pydantic schema and validation approach are good. Provider abstraction and fallback-key rotation are also useful. The prompt should eventually be tightened so the model is explicitly instructed to avoid inventing unnecessary fields and to use controlled values where appropriate.
+**Current implementation:** Pydantic validates the complete unified schema. Provider/model selection is explicit and fallback keys remain within the chosen provider.
 
 **Failure modes:**
 
@@ -274,16 +279,13 @@ The following agents are the recommended target architecture. Some can later be 
 
 ---
 
-### 9.2 Scope & Requirements Agent
+### 9.2 Scope & Requirements Responsibility (Merged into Stage 1)
 
 **Purpose:** Resolve ambiguities that the initial intent representation cannot safely decide.
 
-**Input:**
+**Input:** The original user request, handled in the same Stage 1 model call as intent extraction.
 
-- Original user request.
-- Intent Analysis.
-
-**Output:** `LearningRequirements` artifact containing:
+**Output:** The corresponding fields in the unified `RequestUnderstanding` object:
 
 - Target audience.
 - Prior knowledge assumptions.
@@ -297,19 +299,19 @@ The following agents are the recommended target architecture. Some can later be 
 - Explicit constraints.
 - Ambiguities requiring default assumptions.
 
-**Consumer:** Curriculum planner, content agents, and visual planner.
+**Consumer:** Stage 2 pedagogical planning.
 
 **Failure:** If the request is too ambiguous for safe generation, the system should either apply documented defaults or ask the user a clarification question rather than hallucinating requirements.
 
 ---
 
-### 9.3 Topic / Concept Mapper
+### 9.3 Topic / Concept Mapping Responsibility (Merged into Stage 1)
 
 **Purpose:** Convert the requested topic into a dependency-aware concept inventory.
 
-**Input:** Intent Analysis + Learning Requirements.
+**Input:** The original request and scope information considered by the same Stage 1 model call.
 
-**Output:** `ConceptMap` containing:
+**Output:** The concept-mapping fields in the same `RequestUnderstanding` object:
 
 - Concepts.
 - Subconcepts.
@@ -805,23 +807,21 @@ The most important implementation improvement after the current Intent Analyzer 
 
 Recommended artifact sequence:
 
-1. `IntentAnalysis`
-2. `LearningRequirements`
-3. `ConceptMap`
-4. `LessonPlan`
-5. `LearningObjectives`
-6. `ExamplePlan`
-7. `ExplanationArtifact`
-8. `ProcedureArtifact`
-9. `WorkedExampleArtifact`
-10. `ExecutionTrace`
-11. `VisualPlan`
-12. `Storyboard`
-13. `CodeVisualPlan`
-14. `TimingPlan`
-15. `ManimArtifact`
-16. `NarrationArtifact`
-17. `SubtitleArtifact`
+1. `RequestUnderstanding` (unified Stage 1 output)
+2. `LessonPlan`
+3. `LearningObjectives`
+4. `ExamplePlan`
+5. `ExplanationArtifact`
+6. `ProcedureArtifact`
+7. `WorkedExampleArtifact`
+8. `ExecutionTrace`
+9. `VisualPlan`
+10. `Storyboard`
+11. `CodeVisualPlan`
+12. `TimingPlan`
+13. `ManimArtifact`
+14. `NarrationArtifact`
+15. `SubtitleArtifact`
 18. `ValidationReport`
 19. `FinalVideoArtifact`
 
@@ -1078,7 +1078,7 @@ Each agent prompt should define:
 
 Prompts should not be responsible for workflow control. Routing, retries, and state transitions belong to the orchestration layer.
 
-The current Intent Analyzer prompt is directionally correct but should eventually be made more explicit and grammatically precise, and its output requirements should align exactly with the schema.
+The unified Stage 1 prompt and output schema should evolve together; keep the prompt explicit about uncertainty, clarification needs, and not inventing learner requirements.
 
 ---
 

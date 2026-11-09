@@ -47,15 +47,11 @@ graph TB
     State <--> Checkpoint
 
     subgraph S1["Stage 1 — Request Understanding"]
-        Intent[Intent Analyzer Agent\nClassify learning request]:::agent
-        Scope[Scope & Requirements Agent\nResolve depth, audience, constraints]:::agent
-        ContentMap[Topic / Concept Mapper\nBuild concept inventory]:::agent
+        RequestUnderstanding[Request Understanding Agent\nIdentify intent, level, requirements, and concept map]:::agent
     end
 
-    Router --> Intent
-    Intent --> Scope
-    Scope --> ContentMap
-    ContentMap -->|Structured learning specification| State
+    Router --> RequestUnderstanding
+    RequestUnderstanding -->|Unified structured learning specification| State
 
     subgraph S2["Stage 2 — Pedagogical Planning"]
         Curriculum[Lesson / Chapter Planner\nOrder concepts and dependencies]:::agent
@@ -178,8 +174,7 @@ graph TB
         OpenAI[OpenAI]
     end
 
-    Intent -.-> LLM
-    Scope -.-> LLM
+    RequestUnderstanding -.-> LLM
     Curriculum -.-> LLM
     Objective -.-> LLM
     Explanation -.-> LLM
@@ -207,4 +202,4 @@ graph TB
 2. **Use typed artifact contracts between stages.** A downstream component should consume a stable structure rather than parsing free-form prose from another agent.
 3. **Keep LangGraph as the workflow coordinator.** Agents should perform bounded work; the graph should own sequencing, branching, retries, checkpoints, and termination.
 4. **Make revision targeted.** A failed render should return to code generation or code repair, not regenerate the entire lesson. A timing failure should update timing/narration/subtitle artifacts without rewriting unrelated content.
-5. **Treat the current Intent Analyzer as Stage 1, not as the architecture itself.** Its structured `IntentAnalysis` output is the right direction for a contract-first design.
+5. **Keep Stage 1 as one bounded request-understanding call.** Its unified `RequestUnderstanding` output covers intent, scope, learner requirements, and a concept inventory; later stages consume that contract.

@@ -2,81 +2,135 @@ import json
 
 from backend.app.config import Settings, get_settings
 from backend.app.prompts import load_prompt
-from backend.app.schemas import IntentAnalysis
+from backend.app.schemas import (
+    AgentExecutionTrace,
+    RequestUnderstanding,
+)
 from backend.app.agents.base import BaseAgent
+from backend.app.agents.factory import resolve_agent_config
 from backend.app.agents.utils import (
-    build_gemini_llm as _build_gemini_llm,
-    build_groq_llm as _build_groq_llm,
-    build_openai_llm as _build_openai_llm,
-    is_rotatable_error as _is_rotatable_error,
-    parse_json_response as _parse_json_response,
-    secret_value as _secret_value,
+    invoke_with_trace,
 )
 
 
-class IntentAnalyzerAgent(BaseAgent):
-    """Classifies a learner's request into a plan for downstream agents."""
+class RequestUnderstandingAgent(BaseAgent):
+    """Analyze a learner request into the Stage 1 structured representation.
 
-    def __init__(self, model_name: str, api_keys: list[str], llm_builder):
-        super().__init__(model_name, api_keys, llm_builder)
-        self.system_prompt = load_prompt("intent_analyzer_agent.yaml")
+    This agent builds a schema-guided prompt, invokes a configured model, and
+    returns validated request details with an optional execution trace.
 
-    def analyze(self, query: str) -> IntentAnalysis:
-        """Analyze ``query`` and return validated, structured intent data."""
+    Example:
+        agent = create_request_understanding_agent("groq")
+        result = agent.analyze("Teach me binary search")
+    """
+
+    def __init__(
+        self,
+        model_name: str,
+        api_keys: list[str],
+        llm_builder,
+        provider: str = "",
+    ):
+        """Initialize the model agent and load its system prompt.
+
+        Args:
+            model_name: Provider-specific model identifier.
+            api_keys: Ordered credentials available for model invocation.
+            llm_builder: Callable that creates a model client from key and name.
+            provider: Provider identifier included in its trace.
+
+        Returns:
+            None: Initializes the request-understanding agent.
+
+        Example:
+            agent = RequestUnderstandingAgent("model", ["key"], builder, "groq")
+        """
+        super().__init__(model_name, api_keys, llm_builder, provider, RequestUnderstanding)
+        self.system_prompt = load_prompt("request_understanding_agent.yaml")
+
+    def analyze(self, query: str) -> RequestUnderstanding:
+        """Analyze a non-empty learner query and return validated details.
+
+        Args:
+            query: Learner's request in natural language.
+
+        Returns:
+            RequestUnderstanding: Structured interpretation of the request.
+
+        Example:
+            result = agent.analyze("Teach me binary search in Java")
+        """
+        result, _ = self.analyze_with_trace(query)
+        return result
+
+    def analyze_with_trace(
+        self, query: str
+    ) -> tuple[RequestUnderstanding, AgentExecutionTrace]:
+        """Analyze a query and retain prompt, response, and usage details.
+
+        Args:
+            query: Non-empty learner request to analyze.
+
+        Returns:
+            tuple[RequestUnderstanding, AgentExecutionTrace]: Validated
+                interpretation and trace of the model execution.
+
+        Raises:
+            ValueError: If ``query`` is empty or not a string.
+            ModelResponseError: If the model response violates the schema.
+
+        Example:
+            result, trace = agent.analyze_with_trace("Explain binary search")
+        """
         if not isinstance(query, str) or not query.strip():
             raise ValueError("query must be a non-empty string")
 
-        schema = json.dumps(IntentAnalysis.model_json_schema(), indent=2)
+        schema = json.dumps(RequestUnderstanding.model_json_schema(), indent=2)
         user_prompt = (
-            "Analyze this user query and return only a JSON object matching this schema.\n"
-            f"Schema:\n{schema}\n\nUser query:\n{query.strip()}"
+            "Understand the learner's request and return one JSON object matching "
+            "the complete Stage 1 schema. Cover the request type and topic, learner "
+            "level and goals, prerequisites, scope, deliverables, concept inventory "
+            "and learning order, and any ambiguity or clarification needed. If the "
+            "request is vague or missing a topic, set topic to null and provide "
+            "clarification questions instead of inventing details. Use unknown or "
+            "unspecified values when the request does not provide enough evidence.\n"
+            f"Schema:\n{schema}\n\nLearner request:\n{query.strip()}"
         )
-        messages = [("system", self.system_prompt), ("user", user_prompt)]
-        last_error: Exception | None = None
-
-        for attempt in range(len(self.api_keys)):
-            try:
-                return _parse_json_response(self.llm.invoke(messages))
-            except Exception as exc:
-                last_error = exc
-                if not _is_rotatable_error(exc) or attempt == len(self.api_keys) - 1:
-                    raise
-                self.rotate_key()
-
-        raise RuntimeError("Intent analysis failed") from last_error
+        messages = [
+            ("system", self.system_prompt),
+            ("user", user_prompt),
+        ]
+        result, trace = invoke_with_trace(self, messages, "request_understanding")
+        return RequestUnderstanding.model_validate(result), trace
 
 
-def create_intent_analyzer_agent(
+def create_request_understanding_agent(
     provider: str | None = None,
     model_name: str | None = None,
     app_settings: Settings | None = None,
-) -> IntentAnalyzerAgent:
-    """Create an analyzer from application settings without making a network call."""
-    app_settings = app_settings or get_settings()
+) -> RequestUnderstandingAgent:
+    """Create a configured Stage 1 agent without making a network call.
 
-    # Fallback to globally defined provider if not passed explicitly
-    provider = (provider or app_settings.default_provider).lower()
+    Args:
+        provider: Optional provider override.
+        model_name: Optional exact model identifier override.
+        app_settings: Optional settings object; defaults to cached settings.
 
-    provider_config = {
-        "gemini": (
-            _build_gemini_llm,
-            app_settings.gemini_model,
-            (app_settings.gemini_api_key, app_settings.gemini_api_key_fallback_1),
-        ),
-        "groq": (
-            _build_groq_llm,
-            app_settings.groq_model,
-            (app_settings.groq_api_key, app_settings.groq_api_key_fallback_1),
-        ),
-        "openai": (
-            _build_openai_llm,
-            app_settings.openai_model,
-            (app_settings.openai_api_key,),
-        ),
-    }
-    if provider not in provider_config:
-        raise ValueError(f"Unsupported provider: {provider}")
+    Returns:
+        RequestUnderstandingAgent: Ready-to-use request analyzer.
 
-    builder, default_model, configured_keys = provider_config[provider]
-    keys = [key for key in (_secret_value(value) for value in configured_keys) if key]
-    return IntentAnalyzerAgent(model_name or default_model, keys, builder)
+    Raises:
+        ValueError: If provider configuration or credentials are invalid.
+
+    Example:
+        agent = create_request_understanding_agent("groq", "qwen/model")
+    """
+    provider, model, keys, builder = resolve_agent_config(
+        provider, model_name, app_settings or get_settings()
+    )
+    return RequestUnderstandingAgent(model, keys, builder, provider)
+
+
+IntentAnalysis = RequestUnderstanding
+IntentAnalyzerAgent = RequestUnderstandingAgent
+create_intent_analyzer_agent = create_request_understanding_agent

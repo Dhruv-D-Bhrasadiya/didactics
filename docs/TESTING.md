@@ -12,10 +12,10 @@ Compile the backend package and check imports:
 
 ```powershell
 .\.venv\Scripts\python.exe -m compileall -q backend
-.\.venv\Scripts\python.exe -c "from backend.app.agents.intent_analyzer_agent import IntentAnalyzerAgent; from backend.app.schemas import IntentAnalysis; print('imports ok')"
+.\.venv\Scripts\python.exe -c "from backend.app.agents.intent_analyzer_agent import RequestUnderstandingAgent; from backend.app.schemas import RequestUnderstanding; print('imports ok')"
 ```
 
-Run the full discovered test suite when more tests are added:
+Run the full discovered test suite:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s backend/test -p "test_*.py" -v
