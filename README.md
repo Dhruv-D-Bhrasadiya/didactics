@@ -9,7 +9,7 @@ The MVP is one focused journey:
 3. Choose a coding language: **Java, Python, C, or C++**.
 4. Set **DSA proficiency** and **programming-language proficiency** independently.
 5. Choose **Solve this problem** or **Teach me the prerequisites**.
-6. Learn through a tailored explanation, language-specific code, and an automatically generated algorithm animation.
+6. Learn through a brute-force-to-optimized solution ladder, per-variant complexity derivations, a scene-by-scene lesson, Manim visuals, synchronized narration and verified playback.
 
 ---
 
@@ -61,13 +61,14 @@ The two proficiency levels must remain independent. A learner may know Java synt
 
 - Restate the task and identify inputs, outputs, and constraints.
 - Explain intuition and key observations at the selected DSA level.
-- Compare brute force and optimized approaches where useful.
-- Derive the chosen algorithm step by step.
+- Start with a correct brute-force baseline, then optimize in explicit stages.
+- Present materially different valid algorithms and explain their trade-offs.
 - Generate code in the selected language.
 - Adapt syntax detail to programming proficiency.
 - Walk through a sample input and edge cases.
-- Explain correctness and time/space complexity.
-- Generate an animation storyboard and visual trace for the algorithm.
+- Explain correctness and derive time/space complexity for every implementation variant.
+- Generate a scene-by-scene storyboard with exact narration and visual instructions.
+- Render Manim visuals and per-scene audio, then run synchronized multimodal QA.
 
 ### B. Teach me the prerequisites
 
@@ -112,7 +113,7 @@ Animation requirements:
 - Support deterministic re-rendering from a saved storyboard.
 - If rendering fails, preserve the lesson and show the textual walkthrough; never block learning on animation availability.
 
-The first implementation can use Manim for programmatic mathematical/algorithmic scenes. Keep the renderer behind an adapter so another renderer can be added later. TTS/narration can be a later enhancement; MVP captions and on-screen explanations are sufficient.
+The first implementation can use Manim for programmatic mathematical/algorithmic scenes. Keep the renderer behind an adapter so another renderer can be added later. Narration is part of the target workflow: every scene defines spoken content and timing, and the audio agent generates a matching segment. Captions remain an accessibility fallback.
 
 ## Architecture
 
@@ -175,7 +176,7 @@ Allowed values:
 
 Included in the focused MVP: problem-number lookup, problem confirmation, language selection, independent proficiency settings, two learning paths, tailored code/syntax explanations, structured animation storyboards, and a first renderer integration.
 
-Deferred until the core journey works: user accounts and progress analytics, other coding platforms, automatic LeetCode submissions, social features, multi-agent expansion, TTS/voice narration, and arbitrary free-form topic discovery.
+Deferred until the core journey works: user accounts and progress analytics, other coding platforms, automatic LeetCode submissions, social features, arbitrary free-form topic discovery.
 
 ## Reliability and safety
 
@@ -199,3 +200,68 @@ Deferred until the core journey works: user accounts and progress analytics, oth
 7. End-to-end tests for all languages, proficiency combinations, both paths and render failure.
 
 This README is the product specification and implementation baseline; it does not claim that these features are already implemented in the source code.
+
+## Six-agent solution-to-video workflow
+
+| Agent | Responsibility | Required output |
+|---|---|---|
+| **1 — Solution strategist** | Solve in the selected language. Begin with brute force, progressively optimize, and identify materially different valid algorithms. | Ordered approaches, observations, correctness, trade-offs and complete code variants with stable IDs. |
+| **2 — Complexity analyst** | Analyze every code variant; derive rather than merely state complexity. | Per-variant time/space derivations, loop/recurrence analysis, auxiliary vs input space, recursion stack and meaningful case distinctions. |
+| **3 — Lesson director** | Turn solutions and complexity reports into a teachable video plan. | Scene timeline, durations, objectives, exact narration, on-screen text, visual direction, code/trace references, transitions and audio cues. |
+| **4 — Manim animator** | Implement every visual scene from the approved plan. | Manim scene code, reusable components, render settings and scene mapping. |
+| **5 — Audio producer** | Generate narration from the exact approved scene scripts. | One audio segment per scene, actual duration, voice/config metadata, sample rate, encoding and offsets. |
+| **6 — Multimodal QA director** | Watch the video and listen to the audio; compare them with the plan, code and complexity reports. | Per-scene verdicts, timestamps, evidence and actionable repair tickets. |
+
+### Orchestration and repair loop
+
+~~~mermaid
+flowchart TD
+    P[Problem + language] --> A1[Agent 1: solution portfolio]
+    A1 --> G1{Approaches valid and complete?}
+    G1 -->|No| A1R[Repair solution portfolio] --> A1
+    G1 -->|Yes| A2[Agent 2: complexity per code variant]
+    A2 --> G2{All variants have derivations?}
+    G2 -->|No| A2R[Repair derivations] --> A2
+    G2 -->|Yes| A3[Agent 3: scene plan + narration]
+    A3 --> G3{Plan complete?}
+    G3 -->|No| A3R[Revise plan] --> A3
+    G3 -->|Yes| PAR[Agents 4 and 5 work in parallel]
+    PAR --> A4[Agent 4: Manim visuals]
+    PAR --> A5[Agent 5: scene audio]
+    A4 --> COMP[Compose video + audio + captions]
+    A5 --> COMP
+    COMP --> A6[Agent 6: watch and listen]
+    A6 --> PASS{All QA gates pass?}
+    PASS -->|Yes| DONE[Publish verified lesson]
+    PASS -->|No| BUDGET{Retry budget remains?}
+    BUDGET -->|No| HOLD[Needs review; retain text lesson]
+    BUDGET -->|Yes| TICKETS[Scene-specific repair tickets]
+    TICKETS -->|Visual / Manim| A4
+    TICKETS -->|Audio / narration| A5
+    TICKETS -->|Timing / synchronization| A4
+    A4 --> COMP
+    A5 --> COMP
+~~~
+
+Agent 6 is the release gate. Each ticket identifies the scene, timestamp, observed defect, expected behavior and acceptance test. Route visual defects to Agent 4, audio defects to Agent 5, and synchronization defects to the responsible media agents. Reopen Agent 3 only if the plan itself is incomplete or contradictory. Use a finite retry budget (default target: three repair cycles); never loop indefinitely or publish failed output as verified.
+
+### Complexity explanation standard
+
+For every approach and language-specific implementation, Agent 2 identifies input-size variables, dominant operations, loop bounds or recurrences, operation-count simplification, allocated structures, recursion stack and auxiliary-vs-input space. Explain best/average/worst cases when meaningful and state assumptions such as expected hash lookup time. Every code variant maps to its own complexity record.
+
+### Scene and media contracts
+
+Every scene has a stable ID, order, target duration, learning objective, exact spoken script, on-screen text, visual direction, code/trace/complexity references, transition and audio-segment ID. Agent 4 maps visual beats to Manim scenes. Agent 5 generates matching audio and returns actual duration. Composition aligns audio to scene boundaries and records offsets; it must not silently truncate narration.
+
+### Agent 6 release checklist
+
+- Every valid approach, including a meaningful brute-force baseline, is represented.
+- Every code variant has a matching complexity derivation.
+- Scene order covers all required explanations and follows the learning progression.
+- Code, trace, complexity, captions and spoken narration agree.
+- No missing scenes, blank frames, clipping, overlaps or unreadable labels.
+- Narration is complete, intelligible and synchronized with the intended scene.
+- Video/audio decode end-to-end with valid durations, frame/sample rates and offsets.
+- A manifest links exact solution, complexity, plan, render, audio and QA versions.
+
+This is the target architecture; documentation does not imply that all six agents are already implemented.
