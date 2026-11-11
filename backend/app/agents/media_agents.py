@@ -76,6 +76,8 @@ class Agent5AudioProducer:
             raise RuntimeError("pyttsx3 missing; install backend requirements for offline TTS.") from exc
         audio_dir = run_dir / "audio"
         audio_dir.mkdir(parents=True, exist_ok=True)
+        if repair_notes:
+            log.warning("Regenerating scene audio after QA feedback: %s", repair_notes[:5])
         engine = pyttsx3.init()
         engine.setProperty("rate", 165)
         segments = []

@@ -38,6 +38,14 @@ Agent 5 uses pyttsx3 for local/offline speech generation. Windows uses an instal
 
 ### Six-agent API
 
+From a second terminal, start the frontend:
+
+~~~powershell
+cd frontend
+npm install
+npm run dev
+~~~
+
 The frontend Build my learning session action calls POST /api/sessions/generate. The API fetches the problem and executes:
 
 1. Agent 1: brute-force-first solution portfolio, optimization ladder and algorithm alternatives.
@@ -47,7 +55,7 @@ The frontend Build my learning session action calls POST /api/sessions/generate.
 5. Agent 5: per-scene audio generation. Agents 4 and 5 run in parallel.
 6. Agent 6: video frame/metadata inspection, audio transcription with Groq Whisper when configured, and structured release assessment.
 
-The workflow runs synchronously in a worker thread for now. Long-running job polling and cancellation are a later operational enhancement.
+The workflow runs synchronously in a worker thread for now. Long-running job polling and cancellation are a later operational enhancement. Agent 6 can reject the media and route repair tickets to Agents 4 and 5; the orchestrator allows at most three render/audio/QA cycles and then marks the run needs_review rather than looping forever.
 
 ### Checkpoints and logs
 

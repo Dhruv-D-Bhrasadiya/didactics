@@ -18,6 +18,7 @@ from backend.app.schemas.workflow import GenerateSessionRequest
 log = logging.getLogger("didactics.workflow")
 ROOT = Path(__file__).resolve().parents[3]
 OUT = ROOT / "out"
+MAX_QA_REPAIR_CYCLES = 3
 
 def _save_json(path: Path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -43,6 +44,15 @@ def _mux(video: str | None, audio: str | None, run_dir: Path) -> str | None:
         raise RuntimeError("Video/audio mux failed; see logs/mux.log")
     return str(output)
 
+def _ticket_notes(report, target: str) -> list[str]:
+    notes = []
+    for ticket in report.repair_tickets:
+        route = str(ticket.get("target_agent", ticket.get("agent", ""))).lower()
+        kind = str(ticket.get("type", ticket.get("category", ""))).lower()
+        if target in route or target in kind or (target == "visual" and "agent_4" in route) or (target == "audio" and "agent_5" in route) or "sync" in kind or "sync" in route:
+            notes.append(str(ticket.get("issue", ticket.get("required_change", ticket))))
+    return notes[:8]
+
 def run_learning_workflow(problem: dict, request: GenerateSessionRequest, learner_profile: dict) -> dict:
     run_id = uuid4().hex
     run_dir = OUT / "runs" / run_id
@@ -66,42 +76,54 @@ def run_learning_workflow(problem: dict, request: GenerateSessionRequest, learne
         _checkpoint(run_dir, "03_scene_plan", {"plan": plan, "trace": trace3})
         result["completed_stages"].append("agent_3_lesson_director")
 
-        media_errors = []
-        def render_visuals():
-            return Agent4ManimAnimator().run(plan, run_dir, portfolio, complexity)
-        def render_audio():
-            return Agent5AudioProducer().run(plan, run_dir)
-        # Visual and audio production are independent and run concurrently.
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            visual_future, audio_future = pool.submit(render_visuals), pool.submit(render_audio)
-            try:
-                visual = visual_future.result()
-                media = visual.model_dump(mode="json")
-                _checkpoint(run_dir, "04_animation_bundle", media)
-                result["completed_stages"].append("agent_4_manim_animator")
-            except Exception as exc:
-                media_errors.append("Agent 4: " + str(exc))
-                log.exception("Agent 4 failed run=%s", run_id)
-                _save_json(run_dir / "checkpoints" / "04_animation_error.json", {"error": str(exc), "traceback": traceback.format_exc()})
-                media = {"video_path": None, "rendered": False}
-            try:
-                audio = audio_future.result()
-                media.update(audio)
-                _checkpoint(run_dir, "05_audio_bundle", audio)
-                result["completed_stages"].append("agent_5_audio_producer")
-            except Exception as exc:
-                media_errors.append("Agent 5: " + str(exc))
-                log.exception("Agent 5 failed run=%s", run_id)
-                _save_json(run_dir / "checkpoints" / "05_audio_error.json", {"error": str(exc), "traceback": traceback.format_exc()})
-        final_video = _mux(media.get("video_path"), media.get("audio_path"), run_dir)
-        if final_video:
-            media["video_path"] = final_video
-        _checkpoint(run_dir, "05_media_composition", media)
+        media = {"video_path": None, "audio_path": None, "rendered": False, "audio_generated": False}
+        qa = None
+        repair_notes = []
+        for attempt in range(1, MAX_QA_REPAIR_CYCLES + 1):
+            log.info("Media production and QA attempt %d/%d run=%s", attempt, MAX_QA_REPAIR_CYCLES, run_id)
+            errors = []
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                visual_future = pool.submit(Agent4ManimAnimator().run, plan, run_dir, portfolio, complexity, _ticket_notes(qa, "visual") if qa else repair_notes)
+                audio_future = pool.submit(Agent5AudioProducer().run, plan, run_dir, _ticket_notes(qa, "audio") if qa else repair_notes)
+                try:
+                    visual = visual_future.result()
+                    media.update(visual.model_dump(mode="json"))
+                    _checkpoint(run_dir, f"04_animation_bundle_attempt_{attempt}", media)
+                    if "agent_4_manim_animator" not in result["completed_stages"]:
+                        result["completed_stages"].append("agent_4_manim_animator")
+                except Exception as exc:
+                    errors.append("Agent 4: " + str(exc))
+                    log.exception("Agent 4 failed attempt=%s run=%s", attempt, run_id)
+                    _save_json(run_dir / "checkpoints" / f"04_animation_error_attempt_{attempt}.json", {"error": str(exc), "traceback": traceback.format_exc()})
+                    media["video_path"] = None
+                try:
+                    audio = audio_future.result()
+                    media.update(audio)
+                    _checkpoint(run_dir, f"05_audio_bundle_attempt_{attempt}", audio)
+                    if "agent_5_audio_producer" not in result["completed_stages"]:
+                        result["completed_stages"].append("agent_5_audio_producer")
+                except Exception as exc:
+                    errors.append("Agent 5: " + str(exc))
+                    log.exception("Agent 5 failed attempt=%s run=%s", attempt, run_id)
+                    _save_json(run_dir / "checkpoints" / f"05_audio_error_attempt_{attempt}.json", {"error": str(exc), "traceback": traceback.format_exc()})
+                    media["audio_path"] = None
+            result["warnings"].extend(errors)
+            final_video = _mux(media.get("video_path"), media.get("audio_path"), run_dir)
+            if final_video:
+                media["video_path"] = final_video
+            _checkpoint(run_dir, f"05_media_composition_attempt_{attempt}", media)
 
-        qa, trace6 = Agent6MultimodalQA().run(plan, media.get("video_path"), media.get("audio_path"), run_dir)
-        _checkpoint(run_dir, "06_qa_report", {"report": qa, "trace": trace6})
+            qa, trace6 = Agent6MultimodalQA().run(plan, media.get("video_path"), media.get("audio_path"), run_dir)
+            _checkpoint(run_dir, f"06_qa_attempt_{attempt}", {"report": qa, "trace": trace6})
+            if qa.passed:
+                break
+            repair_notes = [str(ticket.get("issue", ticket.get("required_change", ticket))) for ticket in qa.repair_tickets]
+            if not repair_notes:
+                repair_notes = [finding for scene in qa.scene_results for finding in scene.findings]
+            if attempt < MAX_QA_REPAIR_CYCLES:
+                log.warning("QA rejected media; routing %d repair notes for another attempt", len(repair_notes))
+        _checkpoint(run_dir, "06_qa_report", {"report": qa, "trace": trace6, "attempts": attempt, "max_repair_cycles": MAX_QA_REPAIR_CYCLES})
         result["completed_stages"].append("agent_6_multimodal_qa")
-        result["warnings"].extend(media_errors)
         result.update({
             "status": "completed" if qa.passed else "needs_review",
             "lesson_title": plan.lesson_title,
@@ -110,6 +132,7 @@ def run_learning_workflow(problem: dict, request: GenerateSessionRequest, learne
             "scene_plan": plan.model_dump(mode="json"),
             "media": media,
             "qa_report": qa.model_dump(mode="json"),
+            "qa_attempts": attempt,
             "artifacts": {"run_dir": str(run_dir), "checkpoints_dir": str(run_dir / "checkpoints"), "logs_dir": str(run_dir / "logs")},
         })
         _save_json(run_dir / "result.json", result)
