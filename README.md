@@ -264,4 +264,9 @@ Every scene has a stable ID, order, target duration, learning objective, exact s
 - Video/audio decode end-to-end with valid durations, frame/sample rates and offsets.
 - A manifest links exact solution, complexity, plan, render, audio and QA versions.
 
-This is the target architecture; documentation does not imply that all six agents are already implemented.
+The backend now implements all six agent stages, Gemini-first/Groq-fallback model calls, strict structured-output validation, parallel Manim/audio production, per-stage checkpoints, persistent logs, and a bounded three-cycle media QA repair loop. Media generation requires local Manim, FFmpeg and TTS dependencies. Agent 6 performs sampled-frame inspection, media probing and Groq Whisper transcript checks when configured; treat its result as automated technical QA, not a substitute for human review.
+
+
+## Run the six-agent workflow
+
+Configure backend/.env from backend/.env.example with GEMINI_API_KEY and GROQ_API_KEY, then follow [docs/RUNNING.md](docs/RUNNING.md) for Python, Manim, FFmpeg and frontend setup. Generated run artifacts and checkpoints are saved under out/ and are excluded from Git.

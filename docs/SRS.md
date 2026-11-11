@@ -1,7 +1,7 @@
 # Didactics — Software Requirements Specification
 
-**Version:** 3.0  
-**Status:** Six-agent solution-to-verified-video target specification  
+**Version:** 3.1  
+**Status:** Six-agent workflow implemented; media QA has documented limitations  
 **Date:** 2026-11-11
 
 ## 1. Purpose
@@ -305,3 +305,10 @@ stateDiagram-v2
     NEEDS_REVIEW --> [*]
     PUBLISHED --> [*]
 ~~~
+
+
+## 7C. Implementation notes and operational constraints
+
+The current backend provides all six executable agent stages. Gemini is the primary text/vision LLM provider and Groq is the fallback. Agent 4 currently renders a constrained Manim scene-card/algorithm-code template from the approved scene plan rather than executing arbitrary model-generated Python. Agent 5 uses local pyttsx3 speech synthesis and FFmpeg concatenation. Agent 6 samples decoded frames, probes media streams and uses Groq Whisper transcription when a Groq credential is configured; when transcription is unavailable it must report that speech verification was skipped.
+
+The orchestrator checkpoints each major hand-off in out/runs/<run_id>/checkpoints, logs to both terminal and out/logs/didactics.log, and caps QA repair attempts at three. If media dependencies or provider calls fail, completed text artifacts and tracebacks remain available. The current endpoint runs synchronously in a worker thread; a durable queue, polling API, cancellation and human review UI are future operational enhancements.

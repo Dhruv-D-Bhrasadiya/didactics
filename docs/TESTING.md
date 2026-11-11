@@ -33,3 +33,15 @@ Run the existing tests from the repository root:
 ```
 
 The existing intent-agent tests use a fake LLM and do not make API requests or require a configured API key. These are regression tests for the preserved prototype, not proof that the LeetCode MVP is implemented.
+
+
+## Six-agent workflow schema tests
+
+New strict contract tests live in backend/test/test_workflow_schemas.py. They verify invalid problem IDs, required complexity derivations and required solution code. Run them with the full test suite:
+
+~~~powershell
+python -m compileall -q backend
+python -m unittest discover -s backend/test -p "test_*.py" -v
+~~~
+
+End-to-end tests still require valid Gemini/Groq credentials, a retrievable LeetCode problem, Manim, FFmpeg and a working local TTS voice. Provider fallback should also be exercised by temporarily using an invalid Gemini key with a valid Groq key; never commit credentials.
