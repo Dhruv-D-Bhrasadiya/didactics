@@ -1,8 +1,8 @@
 # Didactics — Software Requirements Specification
 
-**Version:** 2.1  
-**Status:** Focused personalized visual-learning MVP  
-**Date:** 2026-11-09
+**Version:** 3.0  
+**Status:** Six-agent solution-to-verified-video target specification  
+**Date:** 2026-11-11
 
 ## 1. Purpose
 
@@ -42,8 +42,7 @@ The experience includes an algorithm animation pipeline. A structured algorithm 
 - Other coding platforms and natural-language topic discovery.
 - User accounts, progress dashboards, social features and leaderboards.
 - Automatic code submission/judging.
-- TTS, voice narration, avatar presenters and advanced video editing.
-- Unrestricted multi-agent orchestration.
+- Avatar presenters and advanced video editing.
 - Arbitrary model-generated code execution.
 
 ## 4. Learner journey and settings
@@ -242,7 +241,7 @@ Example request:
 - End-to-end tests cover lookup → config → solve/prerequisites → lesson → animation status.
 - Animation failure tests verify the text lesson remains usable.
 
-The MVP is accepted when a learner can enter a problem number, configure language and both skill levels, choose either learning intent, and receive a validated personalized lesson with an animation artifact when rendering succeeds.
+The first milestone is accepted when a learner can enter a problem number, configure language and both skill levels, choose either intent, and receive a validated lesson. The full solve-to-video milestone additionally requires all six agents, synchronized media, passing Agent 6 QA and a versioned artifact manifest.
 
 ## 12. Delivery roadmap
 
@@ -254,3 +253,55 @@ The MVP is accepted when a learner can enter a problem number, configure languag
 6. Typed storyboard planner and validation.
 7. Isolated Manim renderer, asynchronous job lifecycle and QA.
 8. Animation player, failure fallback and end-to-end acceptance tests.
+
+## 7A. Multi-agent solution production requirements
+
+### FR-16 — Agent 1: solution portfolio and optimization ladder
+For a solve request, generate a correct brute-force baseline first when a meaningful baseline exists. Derive progressively optimized solutions by identifying bottlenecks and explaining the observation enabling each improvement. Identify materially different valid algorithms when they exist, explain trade-offs and use cases, and provide a complete implementation in the selected language for every approach. Assign a stable code-variant ID to every implementation. Cosmetic rewrites are not distinct algorithms.
+
+### FR-17 — Agent 2: per-variant complexity derivation
+Analyze every code variant. Identify input-size variables and dominant operations; derive runtime from loop bounds, nested loops, recursion/recurrences and data-structure costs; derive auxiliary space from allocated structures and recursion stack while distinguishing input storage; explain simplification to asymptotic notation; state best/average/worst cases when meaningful; state assumptions about expected/amortized operations; and flag missing variants or code/complexity mismatches.
+
+### FR-18 — Agent 3: scene-by-scene lesson plan
+Generate a complete ScenePlan before rendering. Each scene contains a stable ID, order, target duration, learning objective, exact narration script, on-screen text, visual composition, code-variant references, trace-state references, complexity references, transition instructions and audio-segment ID. The timeline makes brute-force-to-optimized progression explicit and allocates enough time for narration without truncation. Adapt explanations to learner proficiency.
+
+### FR-19 — Agent 4: Manim animation production
+Generate Manim visuals for every planned scene using reusable components and approved scene data. Map scene output to stable scene IDs and source trace states. Preserve algorithm correctness, code/complexity consistency, legibility and safe margins. Use constrained templates and isolated workers; never execute arbitrary model-generated shell commands or unrestricted code.
+
+### FR-20 — Agent 5: scene-specific audio production
+Generate narration audio from Agent 3's approved scene scripts. Audio is addressable per scene and includes actual duration, offset, script identity, voice profile and technical metadata (codec, sample rate and channel count). Preserve all approved words. If speech does not fit, request a longer scene or revised script; do not silently truncate or excessively accelerate narration.
+
+### FR-21 — Agent 6: audiovisual verification and repair orchestration
+Inspect the composed video and audio against the ScenePlan, solution portfolio and complexity report. Verify approach coverage; presence and order of scenes; agreement among code, trace, formulas, captions and narration; visual readability, clipping, blank frames, overlaps and pacing; audio intelligibility, completeness, alignment, gaps and abrupt cuts; and valid media decoding, duration, frame rate, sample rate and synchronization. Return a structured QA report with per-scene evidence and repair tickets. Route visual defects to Agent 4, audio defects to Agent 5, and synchronization defects to the responsible media agents. Reopen Agent 3 if the plan itself is incomplete or contradictory.
+
+### FR-22 — Bounded repair loop and release gate
+Use a configurable finite retry budget (default target: three QA repair cycles). Preserve artifact versions, diagnostics and tickets for every attempt. On pass, publish the verified artifact. On exhaustion, mark media as needs_review or failed; keep the text lesson available and never label failed media verified. The loop shall never run indefinitely.
+
+## 7B. Agent orchestration data contracts
+
+- **SolutionPortfolio:** ordered approaches, correctness, trade-offs and language-specific code variants with stable IDs.
+- **ComplexityReport:** one record per code variant, time/space derivations, input variables, assumptions and case analysis.
+- **ScenePlan:** ordered timeline, exact narration scripts, on-screen copy, visual directions, source references, transitions and audio-segment IDs.
+- **AnimationBundle:** Manim scene sources, render settings, video URI, scene boundaries and render logs.
+- **AudioBundle:** per-scene audio URI, duration, offset, transcript identity, voice profile and encoding metadata.
+- **QAReport:** attempt number, verdict, per-scene checks, timestamps, evidence, severity, repair tickets and artifact versions.
+- **RepairTicket:** target agent, scene ID, timestamp/range, observed issue, expected behavior, required change and acceptance test.
+- **MediaManifest:** exact versions/hashes of solution, complexity, scene plan, video, audio and QA artifacts.
+
+### Agent state machine
+
+~~~mermaid
+stateDiagram-v2
+    [*] --> SOLVING
+    SOLVING --> COMPLEXITY: Agent 1 portfolio accepted
+    COMPLEXITY --> PLANNING: Agent 2 covers every code variant
+    PLANNING --> PRODUCING: Agent 3 plan validated
+    PRODUCING --> QA: Agents 4 and 5 artifacts composed
+    QA --> PUBLISHED: Agent 6 passes release gates
+    QA --> REPAIR: Agent 6 returns tickets
+    REPAIR --> PRODUCING: Agent 4/5 repair media
+    REPAIR --> PLANNING: Scene plan is defective
+    REPAIR --> NEEDS_REVIEW: Retry budget exhausted
+    NEEDS_REVIEW --> [*]
+    PUBLISHED --> [*]
+~~~
