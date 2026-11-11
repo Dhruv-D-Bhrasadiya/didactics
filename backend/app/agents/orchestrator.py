@@ -6,7 +6,6 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
 
 from backend.app.agents.solution_agent import Agent1SolutionStrategist
 from backend.app.agents.complexity_agent import Agent2ComplexityAnalyst
@@ -14,23 +13,11 @@ from backend.app.agents.lesson_director_agent import Agent3LessonDirector
 from backend.app.agents.media_agents import Agent4ManimAnimator, Agent5AudioProducer
 from backend.app.agents.qa_agent import Agent6MultimodalQA
 from backend.app.schemas.workflow import GenerateSessionRequest
+from backend.app.storage.out_manager import create_run_directory, write_json, write_run_manifest
+from backend.app.storage.checkpoint_manager import CheckpointManager
 
 log = logging.getLogger("didactics.workflow")
-ROOT = Path(__file__).resolve().parents[3]
-OUT = ROOT / "out"
 MAX_QA_REPAIR_CYCLES = 3
-
-def _save_json(path: Path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=lambda x: x.model_dump(mode="json") if hasattr(x, "model_dump") else str(x)) + "\n", encoding="utf-8")
-    temporary.replace(path)
-
-def _checkpoint(run_dir: Path, stage: str, data):
-    path = run_dir / "checkpoints" / (stage + ".json")
-    _save_json(path, {"stage": stage, "saved_at": datetime.now(timezone.utc).isoformat(), "data": data})
-    log.info("Checkpoint saved: %s", path)
-    return path
 
 def _mux(video: str | None, audio: str | None, run_dir: Path) -> str | None:
     ffmpeg = shutil.which("ffmpeg")
@@ -54,26 +41,24 @@ def _ticket_notes(report, target: str) -> list[str]:
     return notes[:8]
 
 def run_learning_workflow(problem: dict, request: GenerateSessionRequest, learner_profile: dict) -> dict:
-    run_id = uuid4().hex
-    run_dir = OUT / "runs" / run_id
-    (run_dir / "logs").mkdir(parents=True, exist_ok=True)
-    (run_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
+    run_id, run_dir = create_run_directory()
+    checkpoints = CheckpointManager(run_dir)
     result = {"run_id": run_id, "status": "running", "run_dir": str(run_dir), "completed_stages": [], "warnings": []}
-    _save_json(run_dir / "run.json", {"run_id": run_id, "created_at": datetime.now(timezone.utc).isoformat(), "problem": problem, "request": request.model_dump(), "learner_profile": learner_profile})
-    _checkpoint(run_dir, "00_input_validated", {"problem": problem, "request": request, "learner_profile": learner_profile})
+    write_json(run_dir / "run.json", {"run_id": run_id, "created_at": datetime.now(timezone.utc).isoformat(), "problem": problem, "request": request.model_dump(), "learner_profile": learner_profile})
+    checkpoints.save("00_input_validated", {"problem": problem, "request": request, "learner_profile": learner_profile})
     log.info("Starting workflow run=%s problem=%s", run_id, request.problem_number)
     learner = {**learner_profile, "intent": request.intent}
     try:
         portfolio, trace1 = Agent1SolutionStrategist().run(problem, learner)
-        _checkpoint(run_dir, "01_solution_portfolio", {"portfolio": portfolio, "trace": trace1})
+        checkpoints.save("01_solution_portfolio", {"portfolio": portfolio, "trace": trace1})
         result["completed_stages"].append("agent_1_solution_strategist")
 
         complexity, trace2 = Agent2ComplexityAnalyst().run(portfolio, problem)
-        _checkpoint(run_dir, "02_complexity_report", {"report": complexity, "trace": trace2})
+        checkpoints.save("02_complexity_report", {"report": complexity, "trace": trace2})
         result["completed_stages"].append("agent_2_complexity_analyst")
 
         plan, trace3 = Agent3LessonDirector().run(problem, portfolio, complexity, learner)
-        _checkpoint(run_dir, "03_scene_plan", {"plan": plan, "trace": trace3})
+        checkpoints.save("03_scene_plan", {"plan": plan, "trace": trace3})
         result["completed_stages"].append("agent_3_lesson_director")
 
         media = {"video_path": None, "audio_path": None, "rendered": False, "audio_generated": False}
@@ -88,33 +73,33 @@ def run_learning_workflow(problem: dict, request: GenerateSessionRequest, learne
                 try:
                     visual = visual_future.result()
                     media.update(visual.model_dump(mode="json"))
-                    _checkpoint(run_dir, f"04_animation_bundle_attempt_{attempt}", media)
+                    checkpoints.save(f"04_animation_bundle_attempt_{attempt}", media)
                     if "agent_4_manim_animator" not in result["completed_stages"]:
                         result["completed_stages"].append("agent_4_manim_animator")
                 except Exception as exc:
                     errors.append("Agent 4: " + str(exc))
                     log.exception("Agent 4 failed attempt=%s run=%s", attempt, run_id)
-                    _save_json(run_dir / "checkpoints" / f"04_animation_error_attempt_{attempt}.json", {"error": str(exc), "traceback": traceback.format_exc()})
+                    checkpoints.save(f"04_animation_error_attempt_{attempt}", {"error": str(exc), "traceback": traceback.format_exc()})
                     media["video_path"] = None
                 try:
                     audio = audio_future.result()
                     media.update(audio)
-                    _checkpoint(run_dir, f"05_audio_bundle_attempt_{attempt}", audio)
+                    checkpoints.save(f"05_audio_bundle_attempt_{attempt}", audio)
                     if "agent_5_audio_producer" not in result["completed_stages"]:
                         result["completed_stages"].append("agent_5_audio_producer")
                 except Exception as exc:
                     errors.append("Agent 5: " + str(exc))
                     log.exception("Agent 5 failed attempt=%s run=%s", attempt, run_id)
-                    _save_json(run_dir / "checkpoints" / f"05_audio_error_attempt_{attempt}.json", {"error": str(exc), "traceback": traceback.format_exc()})
+                    checkpoints.save(f"05_audio_error_attempt_{attempt}", {"error": str(exc), "traceback": traceback.format_exc()})
                     media["audio_path"] = None
             result["warnings"].extend(errors)
             final_video = _mux(media.get("video_path"), media.get("audio_path"), run_dir)
             if final_video:
                 media["video_path"] = final_video
-            _checkpoint(run_dir, f"05_media_composition_attempt_{attempt}", media)
+            checkpoints.save(f"05_media_composition_attempt_{attempt}", media)
 
             qa, trace6 = Agent6MultimodalQA().run(plan, media.get("video_path"), media.get("audio_path"), run_dir)
-            _checkpoint(run_dir, f"06_qa_attempt_{attempt}", {"report": qa, "trace": trace6})
+            checkpoints.save(f"06_qa_attempt_{attempt}", {"report": qa, "trace": trace6})
             if qa.passed:
                 break
             repair_notes = [str(ticket.get("issue", ticket.get("required_change", ticket))) for ticket in qa.repair_tickets]
@@ -122,7 +107,7 @@ def run_learning_workflow(problem: dict, request: GenerateSessionRequest, learne
                 repair_notes = [finding for scene in qa.scene_results for finding in scene.findings]
             if attempt < MAX_QA_REPAIR_CYCLES:
                 log.warning("QA rejected media; routing %d repair notes for another attempt", len(repair_notes))
-        _checkpoint(run_dir, "06_qa_report", {"report": qa, "trace": trace6, "attempts": attempt, "max_repair_cycles": MAX_QA_REPAIR_CYCLES})
+        checkpoints.save("06_qa_report", {"report": qa, "trace": trace6, "attempts": attempt, "max_repair_cycles": MAX_QA_REPAIR_CYCLES})
         result["completed_stages"].append("agent_6_multimodal_qa")
         result.update({
             "status": "completed" if qa.passed else "needs_review",
@@ -135,13 +120,13 @@ def run_learning_workflow(problem: dict, request: GenerateSessionRequest, learne
             "qa_attempts": attempt,
             "artifacts": {"run_dir": str(run_dir), "checkpoints_dir": str(run_dir / "checkpoints"), "logs_dir": str(run_dir / "logs")},
         })
-        _save_json(run_dir / "result.json", result)
-        _save_json(run_dir / "manifest.json", {"run_id": run_id, "status": result["status"], "completed_stages": result["completed_stages"], "files": [str(p.relative_to(run_dir)) for p in run_dir.rglob("*") if p.is_file()]})
+        write_json(run_dir / "result.json", result)
+        write_run_manifest(run_dir, result)
         log.info("Workflow finished run=%s status=%s", run_id, result["status"])
         return result
     except Exception as exc:
         log.exception("Workflow failed run=%s", run_id)
         result.update({"status": "failed", "error": str(exc), "failed_at": datetime.now(timezone.utc).isoformat(), "artifacts": {"run_dir": str(run_dir), "checkpoints_dir": str(run_dir / "checkpoints"), "logs_dir": str(run_dir / "logs")}})
-        _save_json(run_dir / "failure.json", {"error": str(exc), "traceback": traceback.format_exc(), "completed_stages": result["completed_stages"]})
-        _save_json(run_dir / "result.json", result)
+        checkpoints.save_failure(exc, traceback.format_exc(), result["completed_stages"])
+        write_json(run_dir / "result.json", result)
         return result

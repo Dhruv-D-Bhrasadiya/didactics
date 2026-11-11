@@ -87,3 +87,14 @@ Agent 6 probes media files, samples video frames for blank-frame signals, and us
 python -m compileall -q backend
 python -m unittest discover -s backend/test -p "test_*.py" -v
 ~~~
+
+
+## Code organization
+
+- Agent code: `backend/app/agents/agent modules` (one module per agent).
+- Agent prompts: `backend/app/prompts/agent_*.txt`.
+- Schemas: `backend/app/schemas/workflow.py`.
+- Run/output storage: `backend/app/storage/out_manager.py`.
+- Checkpoints/failures: `backend/app/storage/checkpoint_manager.py`.
+
+Agent 1 receives only the statement, examples, and constraints as problem context, plus the three required learner settings separately. A focused unit test verifies that title, difficulty, tags, metadata and unrelated learner fields are excluded.

@@ -1,0 +1,2 @@
+AUDIO PRODUCTION BRIEF
+Generate one narration segment per scene in exact scene order. Speak the approved narration verbatim. Keep a steady, clear teaching pace. Add no facts, filler or commentary. Preserve segment-to-scene mapping for QA.

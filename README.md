@@ -270,3 +270,10 @@ The backend now implements all six agent stages, Gemini-first/Groq-fallback mode
 ## Run the six-agent workflow
 
 Configure backend/.env from backend/.env.example with GEMINI_API_KEY and GROQ_API_KEY, then follow [docs/RUNNING.md](docs/RUNNING.md) for Python, Manim, FFmpeg and frontend setup. Generated run artifacts and checkpoints are saved under out/ and are excluded from Git.
+
+
+## Modular agent implementation
+
+Each agent implementation lives in its own module under `backend/app/agents/`. Its instructions live in `backend/app/prompts/agent_<n>_*.txt` and are loaded by the shared prompt loader. Agent 1's problem payload is intentionally restricted to **statement, examples, and constraints**; learner language and proficiency are passed as a separate, small configuration object. It does not receive title, difficulty, tags, URLs, source metadata, or unrelated fields.
+
+Workflow persistence is separated from orchestration: `backend/app/storage/out_manager.py` owns run directories and JSON artifacts, while `checkpoint_manager.py` owns checkpoint and failure records. The Pydantic workflow schemas are strict, bounded, and validate IDs and cross-agent references. See [Agent structure](docs/AGENT_STRUCTURE.md).

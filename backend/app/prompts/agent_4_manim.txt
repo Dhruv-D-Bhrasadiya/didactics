@@ -1,0 +1,2 @@
+MANIM RENDERING BRIEF
+Render the approved scene plan as readable, consistent visual teaching slides. Preserve scene order and IDs. Keep titles and captions within safe margins, use clear hierarchy and high contrast, avoid text overflow, and add no claims absent from the scene plan. Code snippets should be shortened only at line boundaries and remain legible.

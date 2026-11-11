@@ -1,25 +1,26 @@
+"""Strict, bounded contracts exchanged between the six workflow agents."""
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 class CodeVariant(StrictModel):
-    variant_id: str = Field(min_length=1)
-    algorithm_name: str
-    strategy: str
-    intuition: str
-    steps: list[str] = Field(min_length=1)
-    code: str = Field(min_length=1)
-    correctness_explanation: str
-    time_complexity_claim: str
-    space_complexity_claim: str
+    variant_id: str = Field(min_length=2, max_length=48, pattern=r"^[a-zA-Z0-9_-]+$")
+    algorithm_name: str = Field(min_length=2, max_length=100)
+    strategy: str = Field(min_length=10, max_length=1200)
+    intuition: str = Field(min_length=10, max_length=2000)
+    steps: list[str] = Field(min_length=1, max_length=20)
+    code: str = Field(min_length=10, max_length=30000)
+    correctness_explanation: str = Field(min_length=10, max_length=3000)
+    time_complexity_claim: str = Field(min_length=2, max_length=100)
+    space_complexity_claim: str = Field(min_length=2, max_length=100)
 
 class SolutionPortfolio(StrictModel):
-    problem_summary: str
-    approaches: list[CodeVariant] = Field(min_length=1)
+    problem_summary: str = Field(min_length=10, max_length=2500)
+    approaches: list[CodeVariant] = Field(min_length=1, max_length=8)
     recommended_variant_id: str
-    comparison: list[str] = Field(default_factory=list)
+    comparison: list[str] = Field(default_factory=list, max_length=12)
 
     @model_validator(mode="after")
     def validate_variant_ids(self):
@@ -32,31 +33,38 @@ class SolutionPortfolio(StrictModel):
 
 class ComplexityItem(StrictModel):
     variant_id: str
-    time_complexity: str
-    time_derivation: list[str] = Field(min_length=1)
-    space_complexity: str
-    space_derivation: list[str] = Field(min_length=1)
+    time_complexity: str = Field(min_length=2, max_length=100)
+    time_derivation: list[str] = Field(min_length=1, max_length=15)
+    space_complexity: str = Field(min_length=2, max_length=100)
+    space_derivation: list[str] = Field(min_length=1, max_length=15)
     case_analysis: dict[str, str] = Field(default_factory=dict)
-    assumptions: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list, max_length=12)
 
 class ComplexityReport(StrictModel):
-    analyses: list[ComplexityItem] = Field(min_length=1)
+    analyses: list[ComplexityItem] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def unique_variants(self):
+        ids = [item.variant_id for item in self.analyses]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Complexity variant IDs must be unique")
+        return self
 
 class LessonScene(StrictModel):
-    scene_id: str = Field(min_length=1)
-    title: str
+    scene_id: str = Field(min_length=1, max_length=48, pattern=r"^[a-zA-Z0-9_-]+$")
+    title: str = Field(min_length=2, max_length=100)
     duration_seconds: int = Field(ge=5, le=90)
-    objective: str
-    narration: str = Field(min_length=1)
-    on_screen_text: list[str] = Field(min_length=1)
-    visual_direction: str
+    objective: str = Field(min_length=5, max_length=300)
+    narration: str = Field(min_length=10, max_length=5000)
+    on_screen_text: list[str] = Field(min_length=1, max_length=10)
+    visual_direction: str = Field(min_length=5, max_length=500)
     variant_id: str | None = None
-    transition: str = "cut"
+    transition: Literal["cut", "fade", "slide", "transform"] = "cut"
 
 class ScenePlan(StrictModel):
-    lesson_title: str
-    learning_outcomes: list[str]
-    scenes: list[LessonScene] = Field(min_length=3)
+    lesson_title: str = Field(min_length=3, max_length=140)
+    learning_outcomes: list[str] = Field(min_length=1, max_length=12)
+    scenes: list[LessonScene] = Field(min_length=3, max_length=40)
 
     @model_validator(mode="after")
     def validate_scene_ids(self):
@@ -79,9 +87,9 @@ class QASceneResult(StrictModel):
 
 class QAReport(StrictModel):
     passed: bool
-    overall_summary: str
-    scene_results: list[QASceneResult]
-    repair_tickets: list[dict[str, Any]] = Field(default_factory=list)
+    overall_summary: str = Field(min_length=5, max_length=2000)
+    scene_results: list[QASceneResult] = Field(min_length=1, max_length=40)
+    repair_tickets: list[dict[str, Any]] = Field(default_factory=list, max_length=30)
     media_checks: dict[str, Any] = Field(default_factory=dict)
 
 class GenerateSessionRequest(StrictModel):

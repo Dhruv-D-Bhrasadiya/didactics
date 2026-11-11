@@ -3,6 +3,7 @@ import logging
 import shutil
 import subprocess
 from pathlib import Path
+from backend.app.agents.prompt_loader import load_prompt
 from backend.app.schemas.workflow import ScenePlan, MediaResult, SolutionPortfolio, ComplexityReport
 
 log = logging.getLogger("didactics.media")
@@ -28,6 +29,7 @@ class Agent4ManimAnimator:
             rows.append({"title": scene.title, "objective": scene.objective, "text": lines[:8], "visual": scene.visual_direction, "duration": scene.duration_seconds})
         source_file = source_dir / "lesson_scene.py"
         source_file.write_text(self._template(rows), encoding="utf-8")
+        (source_dir / "render_brief.txt").write_text(load_prompt("agent_4_manim"), encoding="utf-8")
         command = [manim, "-ql", "--disable_caching", "--media_dir", str(media_dir), str(source_file), "DidacticsLesson"]
         log.info("Agent 4 rendering %d scenes", len(rows))
         result = subprocess.run(command, capture_output=True, text=True, timeout=1200, cwd=str(run_dir))
@@ -76,6 +78,7 @@ class Agent5AudioProducer:
             raise RuntimeError("pyttsx3 missing; install backend requirements for offline TTS.") from exc
         audio_dir = run_dir / "audio"
         audio_dir.mkdir(parents=True, exist_ok=True)
+        (audio_dir / "production_brief.txt").write_text(load_prompt("agent_5_audio"), encoding="utf-8")
         if repair_notes:
             log.warning("Regenerating scene audio after QA feedback: %s", repair_notes[:5])
         engine = pyttsx3.init()
