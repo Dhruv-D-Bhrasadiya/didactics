@@ -61,6 +61,8 @@ export default function App() {
   const [programmingLevel, setProgrammingLevel] = useState("beginner");
   const [intent, setIntent] = useState("solve");
   const [sessionReady, setSessionReady] = useState(false);
+  const [sessionResult, setSessionResult] = useState(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState("");
   const [apiOnline, setApiOnline] = useState(null);
 
@@ -124,27 +126,21 @@ export default function App() {
   }
 
   async function startSession() {
-    if (!problem) return;
-    setSessionError("");
+    if (!problem || sessionLoading) return;
+    setSessionError(""); setSessionResult(null); setSessionReady(false); setSessionLoading(true);
     try {
-      const response = await fetch("/api/learner-config/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          language,
-          dsa_proficiency: dsaLevel,
-          programming_proficiency: programmingLevel,
-        }),
+      const response = await fetch("/api/sessions/generate", {
+        method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ problem_number: Number(problem.problem_number), language, dsa_proficiency: dsaLevel, programming_proficiency: programmingLevel, intent }),
       });
       const payload = await response.json();
-      if (!response.ok || !payload.valid) {
-        setSessionError(payload.detail?.message || "Please review your learning settings.");
-        return;
-      }
-      setSessionReady(true);
-    } catch {
-      setSessionError("Cannot validate the learning settings. Check that the backend is running.");
-    }
+      if (!response.ok) throw new Error(payload.detail?.message || "Could not start the learning workflow.");
+      setSessionResult(payload);
+      setSessionReady(payload.status === "completed" || payload.status === "needs_review");
+      if (payload.status === "failed") setSessionError(payload.error || "Workflow failed. Inspect out/runs and out/logs.");
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : "Workflow failed. Check the backend terminal and out/logs/didactics.log.");
+    } finally { setSessionLoading(false); }
   }
 
   return <div className="app-shell">
@@ -242,10 +238,20 @@ export default function App() {
                   <span className="intent-icon prereq"><Icon name="book" size={20}/></span><span className="intent-radio">{intent === "prerequisites" && <i/>}</span><strong>Teach me the basics first</strong><p>Discover the concepts you need, learn them step by step, then return to the problem.</p><span className="intent-footer">PREREQUISITE PATH <Icon name="arrow" size={14}/></span>
                 </button>
               </div>
-              <button className="launch-button" type="button" disabled={!problem} onClick={startSession}><span><Icon name="spark" size={17}/> Build my learning session</span><Icon name="arrow" size={17}/></button>
+              <button className="launch-button" type="button" disabled={!problem || sessionLoading} onClick={startSession}><span><Icon name="spark" size={17}/> {sessionLoading ? "Building your lesson…" : "Build my learning session"}</span><Icon name="arrow" size={17}/></button>
               {!problem && <p className="launch-hint">Find a problem above to unlock your personalized session.</p>}
               {sessionError && !["not_found","premium","rate_limited","source_error","network_error"].includes(lookupState) && <p className="inline-error">{sessionError}</p>}
-              {sessionReady && <div className="session-confirmation"><span><Icon name="check" size={16}/></span><div><strong>Your learner configuration is validated.</strong><p>{problem.title} · {selectedLanguage.label} · {dsaLevel} DSA · {programmingLevel} programming</p><small>{programmingLevel === "beginner" ? "Syntax explanations enabled." : "Programming explanations adapted to your level."} Problem confirmation is complete.</small></div></div>}
+              {sessionResult && <div className="session-confirmation workflow-result">
+                <span><Icon name="check" size={16}/></span><div>
+                  <strong>{sessionResult.status === "completed" ? "Six-agent lesson generated." : sessionResult.status === "needs_review" ? "Lesson generated — media needs review." : "Workflow failed."}</strong>
+                  <p>Run {sessionResult.run_id} · {sessionResult.completed_stages?.length || 0}/6 stages completed</p>
+                  {sessionResult.media?.video_path && <p><a href={"/artifacts/" + sessionResult.media.video_path.replaceAll(String.fromCharCode(92), "/").split("/out/").pop()} target="_blank" rel="noreferrer">Open generated video</a></p>}
+                  {sessionResult.media?.audio_path && <p><a href={"/artifacts/" + sessionResult.media.audio_path.replaceAll(String.fromCharCode(92), "/").split("/out/").pop()} target="_blank" rel="noreferrer">Open narration audio</a></p>}
+                  {intent === "solve" && sessionResult.solution_portfolio?.approaches?.map((item) => <div key={item.variant_id} className="workflow-approach"><strong>{item.algorithm_name} · {item.variant_id}</strong><pre>{item.code}</pre><small>{item.time_complexity_claim} time · {item.space_complexity_claim} space</small></div>)}
+                  {sessionResult.complexity_report?.analyses?.map((item) => <div key={item.variant_id} className="workflow-approach"><strong>{item.variant_id}: {item.time_complexity} time / {item.space_complexity} space</strong><ul>{item.time_derivation.map((line, index) => <li key={index}>{line}</li>)}</ul><small>Space derivation: {item.space_derivation.join(" ")}</small></div>)}
+                  {sessionResult.artifacts?.run_dir && <small>Checkpoints and logs: {sessionResult.artifacts.run_dir}</small>}
+                  {sessionResult.warnings?.map((warning, index) => <p className="inline-error" key={index}>{warning}</p>)}
+                </div></div>}{sessionReady && <div className="session-confirmation"><span><Icon name="check" size={16}/></span><div><strong>Your learner configuration is validated.</strong><p>{problem.title} · {selectedLanguage.label} · {dsaLevel} DSA · {programmingLevel} programming</p><small>{programmingLevel === "beginner" ? "Syntax explanations enabled." : "Programming explanations adapted to your level."} Problem confirmation is complete.</small></div></div>}
             </section>
           </div>
 

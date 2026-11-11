@@ -1,67 +1,81 @@
 # Running Didactics
 
-The focused MVP has a FastAPI backend and a React/Vite frontend. The previous request-understanding prototype and CLI remain available separately.
+## Existing API
 
-## Prerequisites
+Start the backend from the repository root:
 
-- Python 3.10+
-- Node.js 18+
-- npm
-
-## 1. Start the API
-
-From the repository root:
-
-\`\`\`powershell
-python -m venv .venv
-.\\.venv\\Scripts\\Activate.ps1
+~~~powershell
+.\.venv\Scripts\Activate.ps1
 python -m pip install -r backend/requirements.txt
-python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
-\`\`\`
+python -m uvicorn backend.app.main:app --reload --port 8000
+~~~
 
-Check \`http://127.0.0.1:8000/health\`. Interactive API docs: \`http://127.0.0.1:8000/docs\`.
+Start the frontend in a second terminal:
 
-## 2. Start the frontend
-
-In a second terminal:
-
-\`\`\`powershell
+~~~powershell
 cd frontend
 npm install
 npm run dev
-\`\`\`
+~~~
 
-Open the Vite URL (normally \`http://localhost:5173\`). Vite proxies \`/api\` and \`/health\` to FastAPI.
+API docs: http://localhost:8000/docs
 
-## Problem lookup
+## Six-agent generation setup
 
-\`GET /api/problems/{number}\` resolves the numeric ID through LeetCode's public problem index, retrieves question details through LeetCode GraphQL, sanitizes statement HTML, and returns normalized source fields. Successful lookups are cached in memory for five minutes. Missing IDs, premium-only statements, source rate limits and upstream failures have separate API errors.
+Create the local file backend/.env using backend/.env.example. Do not commit it.
 
-## Learner configuration
+- GEMINI_API_KEY — primary provider.
+- GROQ_API_KEY — automatic provider fallback.
+- Optional GEMINI_API_KEY_FALLBACK_1 and GROQ_API_KEY_FALLBACK_1 for key rotation.
 
-\`POST /api/learner-config/validate\` validates the language and independent DSA/programming levels. Beginner programming proficiency enables explicit syntax guidance.
+Default models: gemini-3.6-flash and qwen/qwen3.8-27b. Override GEMINI_MODEL or GROQ_MODEL if these model IDs are unavailable to your account. API keys are never written to run artifacts or logs.
 
-## Tests
+### Media prerequisites
 
-\`\`\`powershell
-python -m unittest backend.test.test_problem_lookup -v
+Manim requires FFmpeg and native dependencies. Install FFmpeg and add it to PATH. On Windows, install a LaTeX distribution such as MiKTeX if required by your Manim installation. If native Manim dependencies fail on Windows, use WSL2/Ubuntu and install the Python requirements there.
+
+Agent 5 uses pyttsx3 for local/offline speech generation. Windows uses an installed SAPI voice; no separate TTS API key is required.
+
+### Six-agent API
+
+The frontend Build my learning session action calls POST /api/sessions/generate. The API fetches the problem and executes:
+
+1. Agent 1: brute-force-first solution portfolio, optimization ladder and algorithm alternatives.
+2. Agent 2: time/space derivations for every code variant.
+3. Agent 3: scene timeline, exact narration and visual directions.
+4. Agent 4: Manim animation.
+5. Agent 5: per-scene audio generation. Agents 4 and 5 run in parallel.
+6. Agent 6: video frame/metadata inspection, audio transcription with Groq Whisper when configured, and structured release assessment.
+
+The workflow runs synchronously in a worker thread for now. Long-running job polling and cancellation are a later operational enhancement.
+
+### Checkpoints and logs
+
+All generated output is local and ignored by Git:
+
+- out/logs/didactics.log — terminal-mirrored application logs.
+- out/runs/<run_id>/checkpoints/00_input_validated.json — validated input.
+- 01_solution_portfolio.json
+- 02_complexity_report.json
+- 03_scene_plan.json
+- 04_animation_bundle.json or 04_animation_error.json
+- 05_audio_bundle.json or 05_audio_error.json
+- 05_media_composition.json
+- 06_qa_report.json
+- failure.json — traceback and completed stages if orchestration fails.
+- result.json and manifest.json — final status and artifact inventory.
+
+Generated media is served from /artifacts/runs/<run_id>/.... Never commit .env, API keys, generated media or checkpoints.
+
+### Error handling and QA limitations
+
+Every provider attempt and workflow exception is logged to the terminal and out/logs/didactics.log. Stage-specific failures and tracebacks are preserved in the run directory. Gemini is attempted first; configured Gemini keys are rotated before Groq fallback. Groq keys are rotated before the workflow fails. All agent JSON is validated against strict Pydantic schemas.
+
+Agent 6 probes media files, samples video frames for blank-frame signals, and uses Groq Whisper transcription when a Groq key is configured. If transcription is unavailable, speech-content verification is explicitly marked skipped. This is technical QA, not human-level review of visual pedagogy, animation quality or voice naturalness. A missing media dependency results in needs_review while retaining completed text artifacts.
+
+### Tests
+
+~~~powershell
+python -m compileall -q backend
 python -m unittest discover -s backend/test -p "test_*.py" -v
-\`\`\`
-
-LeetCode is an external source and may rate-limit or change its public endpoints. Source failures are surfaced as errors, never as successful problem lookups.
-
-
-## Six-agent solve-to-video workflow (target architecture)
-
-1. **Agent 1 — Solution strategist:** brute-force-first solution ladder, optimized variants, alternative algorithms and selected-language code.
-2. **Agent 2 — Complexity analyst:** time/space derivation for every code variant.
-3. **Agent 3 — Lesson director:** scene timeline with exact narration, on-screen content, visual direction and timing.
-4. **Agent 4 — Manim animator:** planned scenes and scene-boundary/render metadata.
-5. **Agent 5 — Audio producer:** one narration segment per scene with duration, transcript identity and audio metadata.
-6. **Agent 6 — Multimodal QA director:** watches and listens to the composed output, checks it against the plan and source artifacts, and issues repair tickets.
-
-Agents 4 and 5 produce media in parallel after Agent 3's plan is approved. Agent 6 is the release gate. Visual tickets route to Agent 4; audio tickets route to Agent 5. Reopen Agent 3 only when the plan itself is defective. The default target is at most three QA repair cycles; exhaustion marks media as needs_review or failed while preserving the text lesson and diagnostics.
-
-Artifact hand-offs: SolutionPortfolio → ComplexityReport → ScenePlan → (AnimationBundle + AudioBundle) → QAReport → MediaManifest.
-
-This is the approved target architecture. Do not infer that Agent 1–6, Manim rendering, TTS generation, media composition or audiovisual QA are implemented merely because these requirements are documented.
+~~~

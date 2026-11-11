@@ -221,3 +221,5 @@ __marimo__/
 # Additional files and directories to ignore
 # These are specific to the project and should be ignored to prevent sensitive information from being committed
 debug
+# Generated workflow runs, checkpoints, media and runtime logs
+out/
