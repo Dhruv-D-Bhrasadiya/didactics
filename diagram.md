@@ -354,3 +354,75 @@ Example request:
 8. End-to-end tests for all four languages, both intents, proficiency combinations and animation fallback.
 
 Keep TTS, voice narration, accounts, analytics, other coding platforms and multi-agent expansion deferred until this vertical slice is reliable.
+
+## 11. Six-agent solution, complexity, animation and audio architecture
+
+| Agent | Responsibility | Required artifact |
+|---|---|---|
+| **1 — Solution strategist** | Start with brute force, derive incremental optimizations, identify distinct valid algorithm families, and provide complete selected-language implementations. | Ordered solution portfolio, correctness, trade-offs and stable code-variant IDs. |
+| **2 — Complexity analyst** | Derive runtime and memory for every code variant, including loop/recurrence analysis, auxiliary space, recursion stack and assumptions. | Per-variant complexity report with derivations and meaningful case analysis. |
+| **3 — Lesson director** | Design the teaching experience scene by scene. | Scene timeline, durations, objectives, exact narration, on-screen text, visual direction, code/trace/complexity references, transitions and audio cues. |
+| **4 — Manim animator** | Implement approved visual scenes with reusable components. | Manim scene sources, render settings, scene mapping and video metadata. |
+| **5 — Audio producer** | Generate audio from the exact approved scene scripts. | Per-scene audio, actual duration, transcript identity, voice profile, encoding, sample rate and offsets. |
+| **6 — Multimodal QA director** | Watch and listen to the composed media; compare it with the plan and source artifacts. | Per-scene QA verdicts, timestamps, evidence and repair tickets. |
+
+### End-to-end orchestration
+
+~~~mermaid
+flowchart TD
+    INPUT[Problem + learner settings] --> A1[Agent 1: solution portfolio]
+    A1 --> V1{Correct and complete?}
+    V1 -->|No| FIX1[Repair portfolio] --> A1
+    V1 -->|Yes| A2[Agent 2: complexity per code variant]
+    A2 --> V2{Every variant covered?}
+    V2 -->|No| FIX2[Repair derivations] --> A2
+    V2 -->|Yes| A3[Agent 3: scene plan and narration]
+    A3 --> V3{Plan complete?}
+    V3 -->|No| FIX3[Revise plan] --> A3
+    V3 -->|Yes| PAR[Parallel media production]
+    PAR --> A4[Agent 4: Manim visuals]
+    PAR --> A5[Agent 5: per-scene audio]
+    A4 --> COMP[Compose video, audio, captions and manifest]
+    A5 --> COMP
+    COMP --> A6[Agent 6: watch and listen]
+    A6 --> PASS{All release checks pass?}
+    PASS -->|Yes| PUBLISH[Publish verified lesson]
+    PASS -->|No| RETRY{Retry budget remains?}
+    RETRY -->|No| REVIEW[Needs review; preserve text lesson]
+    RETRY -->|Yes| TICKETS[Timestamped repair tickets]
+    TICKETS -->|Visual / Manim| A4
+    TICKETS -->|Audio / narration| A5
+    TICKETS -->|Synchronization| A4
+    A4 --> COMP
+    A5 --> COMP
+~~~
+
+### Agent execution rules
+
+**Agent 1:** Restate task and constraints; show brute force first when meaningful; identify its bottleneck; explain each optimization observation; enumerate genuinely different algorithm families; provide code, correctness and trade-offs for each variant. Cosmetic rewrites are not separate algorithms.
+
+**Agent 2:** Cover every code-variant ID; name input variables and dominant operations; derive bounds from loops, recursion and data-structure costs; distinguish auxiliary memory from input storage; explain Big-O simplification; state meaningful best/average/worst cases and assumptions; flag code/complexity mismatches.
+
+**Agent 3:** Give every scene a stable ID, order, duration, objective, verbatim narration, on-screen copy, visual composition, code/trace/complexity references, transition and audio cue. Make the brute-force-to-optimized progression visible. Never allocate too little time for speech.
+
+**Agent 4:** Implement all planned scenes; use reusable visual components; animate only approved trace states; keep labels, code, pointers and formulas readable; emit scene boundaries and render metadata.
+
+**Agent 5:** Generate one addressable audio segment per scene from the approved script; preserve every word; report actual duration, offsets, transcript identity, voice profile, codec, sample rate and channels. Request longer scenes rather than truncating or excessively speeding speech.
+
+**Agent 6:** Inspect the complete video and audio, not just metadata. Check approach coverage, code and complexity correctness, scene order, visual clarity, clipping, overlaps, pacing, narration completeness, captions, audio gaps, scene sync and end-to-end playback. PASS is allowed only when all mandatory gates pass.
+
+### Repair loop and media contracts
+
+Visual/Manim defects route to Agent 4; narration/audio defects route to Agent 5; synchronization defects route to the responsible media agents. Reopen Agent 3 only if its plan is incomplete or contradictory. Each ticket includes scene ID, timestamp, expected behavior, observed defect, severity and acceptance test. Preserve every attempt and artifact version. Default target is at most **3 QA repair cycles**; on exhaustion mark media as needs_review or failed, retain the text lesson and diagnostics, and never publish as verified.
+
+Artifacts: SolutionPortfolio → ComplexityReport → ScenePlan → AnimationBundle + AudioBundle → QAReport → MediaManifest. Every code variant maps to a complexity record; every scene ID maps to a Manim scene and audio segment; the manifest pins all artifact versions.
+
+## 12. Updated delivery sequence
+
+1. Implement Agent 1 solution portfolio and optimization ladder.
+2. Implement Agent 2 per-variant complexity derivations.
+3. Implement Agent 3 scene plan, timeline, narration and visual directions.
+4. Implement Agent 4 Manim scene generation.
+5. Implement Agent 5 per-scene audio and composition.
+6. Implement Agent 6 audiovisual QA and bounded repair routing.
+7. Integrate job state, artifact versioning, player and end-to-end tests.
