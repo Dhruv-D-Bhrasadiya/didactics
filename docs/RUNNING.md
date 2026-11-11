@@ -49,3 +49,19 @@ python -m unittest discover -s backend/test -p "test_*.py" -v
 \`\`\`
 
 LeetCode is an external source and may rate-limit or change its public endpoints. Source failures are surfaced as errors, never as successful problem lookups.
+
+
+## Six-agent solve-to-video workflow (target architecture)
+
+1. **Agent 1 — Solution strategist:** brute-force-first solution ladder, optimized variants, alternative algorithms and selected-language code.
+2. **Agent 2 — Complexity analyst:** time/space derivation for every code variant.
+3. **Agent 3 — Lesson director:** scene timeline with exact narration, on-screen content, visual direction and timing.
+4. **Agent 4 — Manim animator:** planned scenes and scene-boundary/render metadata.
+5. **Agent 5 — Audio producer:** one narration segment per scene with duration, transcript identity and audio metadata.
+6. **Agent 6 — Multimodal QA director:** watches and listens to the composed output, checks it against the plan and source artifacts, and issues repair tickets.
+
+Agents 4 and 5 produce media in parallel after Agent 3's plan is approved. Agent 6 is the release gate. Visual tickets route to Agent 4; audio tickets route to Agent 5. Reopen Agent 3 only when the plan itself is defective. The default target is at most three QA repair cycles; exhaustion marks media as needs_review or failed while preserving the text lesson and diagnostics.
+
+Artifact hand-offs: SolutionPortfolio → ComplexityReport → ScenePlan → (AnimationBundle + AudioBundle) → QAReport → MediaManifest.
+
+This is the approved target architecture. Do not infer that Agent 1–6, Manim rendering, TTS generation, media composition or audiovisual QA are implemented merely because these requirements are documented.
