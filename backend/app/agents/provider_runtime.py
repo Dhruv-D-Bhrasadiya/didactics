@@ -24,6 +24,36 @@ def _json_payload(text: str) -> dict:
         raise ValueError("Model response must be a JSON object")
     return value
 
+def _normalize_schema_payload(payload: dict | list, schema: Type[T]) -> dict:
+    """Normalize common model JSON shapes before strict Pydantic validation."""
+    if schema.__name__ == "SolutionPortfolio":
+        if isinstance(payload, list):
+            if not payload or not isinstance(payload[0], dict) or "variant_id" not in payload[0]:
+                raise ValueError("Agent 1 returned an empty or invalid list of solution approaches")
+            payload = {
+                "problem_summary": "Solution approaches generated from the supplied problem statement.",
+                "approaches": payload,
+                "recommended_variant_id": payload[0]["variant_id"],
+                "comparison": [],
+            }
+            log.warning("Normalized Agent 1 root-level solution list into SolutionPortfolio")
+        elif isinstance(payload, dict):
+            if "approaches" not in payload:
+                for alias in ("solutions", "variants", "solution_approaches"):
+                    if isinstance(payload.get(alias), list):
+                        payload["approaches"] = payload.pop(alias)
+                        break
+            if "recommended_variant_id" not in payload and payload.get("approaches"):
+                first = payload["approaches"][0]
+                if isinstance(first, dict) and first.get("variant_id"):
+                    payload["recommended_variant_id"] = first["variant_id"]
+            payload.setdefault("problem_summary", "Solution approaches generated from the supplied problem statement.")
+            payload.setdefault("comparison", [])
+    if not isinstance(payload, dict):
+        raise ValueError(f"Model response for {schema.__name__} must be a JSON object")
+    return payload
+
+
 def invoke_structured(agent_name: str, system_prompt: str, user_prompt: str, schema: Type[T]) -> tuple[T, dict]:
     settings = get_settings()
     providers = [
@@ -40,7 +70,7 @@ def invoke_structured(agent_name: str, system_prompt: str, user_prompt: str, sch
                 raw = getattr(response, "content", response)
                 if isinstance(raw, list):
                     raw = "".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in raw)
-                parsed = schema.model_validate(_json_payload(str(raw)))
+                parsed = schema.model_validate(_normalize_schema_payload(_json_payload(str(raw)), schema))
                 trace = {"agent": agent_name, "provider": provider, "model": model, "key_index": key_index, "usage": getattr(response, "usage_metadata", None) or {}, "status": "success"}
                 log.info("%s completed using %s/%s", agent_name, provider, model)
                 return parsed, trace
