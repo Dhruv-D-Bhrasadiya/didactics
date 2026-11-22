@@ -1,390 +1,247 @@
-"""LeetCode problem source adapter with normalization and safe HTML handling."""
-from __future__ import annotations
-
-import html
+import re
 import json
-import time
-from html.parser import HTMLParser
-from typing import Any
-
+import html
 import httpx
+from bs4 import BeautifulSoup
 
-INDEX_URL = "https://leetcode.com/api/problems/all/"
-GRAPHQL_URL = "https://leetcode.com/graphql"
-QUESTION_QUERY = """
-query questionData($titleSlug: String!) {
-  question(titleSlug: $titleSlug) {
-    questionId questionFrontendId title titleSlug content difficulty isPaidOnly
-    topicTags { name slug }
-    sampleTestCase metaData stats
-  }
+
+LANGUAGE_ALIASES = {
+    "python": "python3",
+    "py": "python3",
+    "python3": "python3",
+    "python2": "python",
+    "java": "java",
+    "c": "c",
+    "c++": "cpp",
+    "cpp": "cpp",
+    "js": "javascript",
+    "javascript": "javascript",
 }
-"""
-CACHE_TTL_SECONDS = 300
-_cache: dict[int, tuple[float, dict[str, Any]]] = {}
+
+INDENT_WIDTHS = {
+    "python3": 4,
+    "python": 4,
+    "java": 4,
+    "c": 4,
+    "cpp": 4,
+    "javascript": 4,  # Change to 2 if your source snippets use 2-space JS
+}
 
 
-class ProblemNotFound(Exception):
-    pass
+def get_description(data: dict) -> str:
+
+    content = data.get("content", "")
+    soup = BeautifulSoup(content, "html.parser")
+    paragraphs = []
+
+    for p in soup.find_all("p", recursive=False):
+        text = p.get_text(" ", strip=True)
+
+        # Stop when reaching Examples or Constraints
+        if re.match(r"^(Example\s+\d+|Constraints?)\s*:?", text, re.I):
+            break
+
+        # Clean up spacing around punctuation and superscripts (e.g., "i th" -> "ith", "height ." -> "height.")
+        text = html.unescape(text)
+        text = re.sub(r"\s+([.,;:!?])", r"\1", text)
+        text = re.sub(r"\b(\w+)\s+(th|st|nd|rd)\b", r"\1\2", text)
+        text = re.sub(r"\s+", " ", text).strip()
+
+        if text:
+            paragraphs.append(text)
+
+    # Join paragraphs with a single space (or "\n\n" if you want paragraph breaks without mid-sentence newlines)
+    return " ".join(paragraphs)
 
 
-class ProblemSourceUnavailable(Exception):
-    pass
+def get_examples(data: dict) -> list:
 
+    content = data.get("content", "")
+    soup = BeautifulSoup(content, "html.parser")
+    examples = []
 
-class ProblemRateLimited(Exception):
-    pass
+    for heading in soup.find_all(["strong", "b"]):
+        heading_text = heading.get_text(" ", strip=True)
+        if not re.match(r"Example\s+\d+\s*:", heading_text, re.I):
+            continue
 
+        parent = heading.find_parent("p")
+        if not parent:
+            continue
 
-class PremiumProblem(Exception):
-    pass
+        image = None
+        input_value = ""
+        output_value = ""
+        explanation = ""
 
-
-class _SafeHTML(HTMLParser):
-    """Allowlist sanitizer: removes attributes, scripts, styles and embedded objects."""
-    ALLOWED = {
-        "p", "br", "strong", "b", "em", "i", "code", "pre", "ul", "ol",
-        "li", "sup", "sub", "span", "div", "blockquote", "h1", "h2",
-        "h3", "h4", "table", "thead", "tbody", "tr", "th", "td",
-    }
-    BLOCKED = {"script", "style", "iframe", "object", "svg", "math"}
-
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.output: list[str] = []
-        self.stack: list[str] = []
-        self.blocked_depth = 0
-
-    def handle_starttag(self, tag, attrs):
-        tag = tag.lower()
-        if tag in self.BLOCKED:
-            self.blocked_depth += 1
-        elif not self.blocked_depth and tag in self.ALLOWED:
-            self.output.append(f"<{tag}>")
-            if tag != "br":
-                self.stack.append(tag)
-
-    def handle_endtag(self, tag):
-        tag = tag.lower()
-        if tag in self.BLOCKED and self.blocked_depth:
-            self.blocked_depth -= 1
-        elif not self.blocked_depth and tag in self.stack:
-            while self.stack:
-                current = self.stack.pop()
-                self.output.append(f"</{current}>")
-                if current == tag:
+        # Traverse sibling elements after the Example <p> tag
+        for element in parent.find_next_siblings():
+            # Stop if we reach the next Example or Constraints heading
+            if element.name == "p" and element.find(["strong", "b"]):
+                next_heading = element.find(["strong", "b"]).get_text(" ", strip=True)
+                if re.match(r"(Example\s+\d+|Constraints)\s*:", next_heading, re.I):
                     break
 
-    def handle_data(self, data):
-        if not self.blocked_depth:
-            self.output.append(html.escape(data, quote=False))
+            if element.name == "img":
+                image = element.get("src")
+            elif element.find("img"):  # In case <img> is wrapped in a <p> or <div>
+                image = element.find("img").get("src")
 
-    def result(self):
-        while self.stack:
-            self.output.append(f"</{self.stack.pop()}>")
-        return "".join(self.output)
+            if element.name == "pre":
+                pre_text = element.get_text("\n", strip=True)
 
+                def extract(pattern, next_pattern):
+                    match = re.search(
+                        rf"{pattern}\s*:\s*(.*?)(?={next_pattern}\s*:|$)",
+                        pre_text,
+                        re.I | re.S,
+                    )
+                    return match.group(1).strip() if match else ""
 
-class _TextExtractor(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.parts: list[str] = []
-        self.pre_parts: list[str] = []
-        self.pre_blocks: list[str] = []
-        self.pre_depth = 0
-        self.blocked_depth = 0
+                input_value = extract("Input", "Output")
+                output_value = extract("Output", "Explanation")
+                explanation = extract("Explanation", r"$^")
+                break
 
-    def handle_starttag(self, tag, attrs):
-        if tag in {"script", "style"}:
-            self.blocked_depth += 1
-        if self.blocked_depth:
-            return
-        if tag == "pre":
-            self.pre_depth += 1
-            self.pre_parts = []
-        if tag in {"p", "div", "li", "br", "tr", "h1", "h2", "h3"}:
-            self.parts.append("\n")
+        examples.append({
+            "example_number": len(examples) + 1,
+            "input": input_value,
+            "output": output_value,
+            "explanation": explanation,
+            "image": image,
+        })
 
-    def handle_endtag(self, tag):
-        if tag in {"script", "style"} and self.blocked_depth:
-            self.blocked_depth -= 1
-        if self.blocked_depth:
-            return
-        if tag == "pre" and self.pre_depth:
-            self.pre_depth -= 1
-            self.pre_blocks.append("".join(self.pre_parts).strip())
-        if tag in {"p", "div", "li", "tr"}:
-            self.parts.append("\n")
-
-    def handle_data(self, data):
-        if self.blocked_depth:
-            return
-        self.parts.append(data)
-        if self.pre_depth:
-            self.pre_parts.append(data)
+    return examples
 
 
-def _sanitize_statement(source_html: str) -> tuple[str, str, list[str]]:
-    safe = _SafeHTML()
-    safe.feed(source_html or "")
-    extractor = _TextExtractor()
-    extractor.feed(source_html or "")
-    plain = "\n".join(
-        line.strip()
-        for line in "".join(extractor.parts).splitlines()
-        if line.strip()
-    )
-    examples = [block for block in extractor.pre_blocks if block]
-    return safe.result(), plain, examples
+def get_constraints(data: dict) -> list:
+
+    content = data.get("content", "")
+    soup = BeautifulSoup(content, "html.parser")
+
+    constraints = []
+
+    for tag in soup.find_all(["strong", "b"]):
+        if re.match(r"Constraints?\s*:?", tag.get_text(strip=True), re.I):
+
+            parent = tag.find_parent("p")
+
+            if parent:
+                for element in parent.find_all_next():
+                    if element.name in ["pre", "h1", "h2", "h3", "h4"]:
+                        break
+
+                    if element.name == "li":
+                        value = element.get_text(" ", strip=True)
+                        if value:
+                            constraints.append(value)
+
+                break
+
+    return constraints
 
 
-def _resolve_slug(index_payload: dict[str, Any], problem_number: int) -> str | None:
-    """Match the user-visible frontend ID, not LeetCode's internal database ID."""
-    wanted = str(problem_number)
-    for item in index_payload.get("stat_status_pairs", []):
-        stat = item.get("stat") or {}
-        frontend_id = stat.get("frontend_question_id")
-        if str(frontend_id if frontend_id is not None else stat.get("question_id", "")) == wanted:
-            return stat.get("question__title_slug")
+def get_similar_questions(data: dict) -> list:
+
+    similar = data.get("similarQuestions", [])
+
+    if isinstance(similar, str):
+        try:
+            similar = json.loads(similar)
+        except json.JSONDecodeError:
+            return []
+
+    return [
+        {
+            "name": question.get("title"),
+            "slug": question.get("titleSlug"),
+            "difficulty": question.get("difficulty")
+        }
+        for question in similar
+        if isinstance(question, dict)
+    ]
+
+
+def get_topics(data: dict) -> list:
+
+    return [
+        tag["name"]
+        for tag in data.get("topicTags", [])
+        if isinstance(tag, dict) and tag.get("name")
+    ]
+
+
+def get_hints(data: dict) -> list:
+
+    return data.get("hints", [])
+
+
+def _convert_indentation_to_tabs(code: str, space_width: int = 4) -> str:
+    if not code:
+        return ""
+
+    converted_lines = []
+    for line in code.splitlines():
+        # Match leading spaces/tabs only at the start of the line
+        match = re.match(r"^([ \t]+)(.*)", line)
+        if match:
+            leading_ws, rest = match.groups()
+            # Normalize existing tabs to spaces first, then divide into tab levels
+            total_spaces = leading_ws.replace("\t", " " * space_width)
+            tab_count = len(total_spaces) // space_width
+            remainder_spaces = len(total_spaces) % space_width
+            converted_lines.append(("\t" * tab_count) + (" " * remainder_spaces) + rest)
+        else:
+            converted_lines.append(line)
+
+    return "\n".join(converted_lines)
+
+
+def get_code_template(data: dict, language: str) -> dict | None:
+    normalized = language.lower().strip()
+    target_slug = LANGUAGE_ALIASES.get(normalized, normalized)
+
+    for snippet in data.get("codeSnippets", []):
+        slug = snippet.get("langSlug", "").lower()
+        if slug == target_slug:
+            space_width = INDENT_WIDTHS.get(slug, 4)
+            formatted_code = _convert_indentation_to_tabs(snippet.get("code", ""), space_width)
+
+            return {
+                "language": snippet.get("lang"),
+                "language_slug": snippet.get("langSlug"),
+                "code": formatted_code,
+            }
+
     return None
 
 
-def normalize_question(problem_number: int, question: dict[str, Any]) -> dict[str, Any]:
-    title = str(question.get("title") or "").strip()
-    slug = str(question.get("titleSlug") or "").strip()
-    if not title or not slug:
-        raise ProblemSourceUnavailable("LeetCode returned incomplete problem details.")
+def fetch_problem(problem_number: int, language: str = "java") -> dict:
+    if not isinstance(problem_number, int) or problem_number < 1:
+        raise ValueError("Problem number must be a positive integer and in range with leetcodes question numbers.")
 
-    statement_html, statement_text, examples = _sanitize_statement(
-        str(question.get("content") or "")
-    )
-    tags = [
-        str(tag["name"]).strip()
-        for tag in question.get("topicTags") or []
-        if isinstance(tag, dict) and tag.get("name")
-    ]
-    lines = [line.strip() for line in statement_text.splitlines() if line.strip()]
-    constraints: list[str] = []
-    for index, line in enumerate(lines):
-        if line.lower().rstrip(":") == "constraints":
-            for candidate in lines[index + 1:]:
-                if candidate.lower().startswith(("follow-up", "follow up", "hints:")):
-                    break
-                if candidate.strip():
-                    constraints.append(candidate.lstrip("•- ").strip())
-            break
+    with httpx.Client(timeout=25.0, follow_redirects=True) as client:
+        url = f"https://leetcode-api-pied.vercel.app/problem/{problem_number}"
 
-    def parse_json_field(value):
-        try:
-            parsed = json.loads(value or "{}")
-            return parsed if isinstance(parsed, dict) else {}
-        except (TypeError, json.JSONDecodeError):
-            return {}
-
-    return {
-        "problem_number": problem_number,
-        "question_id": str(question.get("questionId") or ""),
-        "title": title,
-        "slug": slug,
-        "difficulty": str(question.get("difficulty") or "Unknown").title(),
-        "is_premium": bool(question.get("isPaidOnly", False)),
-        "topic_tags": tags,
-        "statement_html": statement_html,
-        "statement_text": statement_text,
-        "examples": examples,
-        "sample_test_case": str(question.get("sampleTestCase") or "").strip(),
-        "constraints": constraints,
-        "metadata": parse_json_field(question.get("metaData")),
-        "stats": parse_json_field(question.get("stats")),
-        "canonical_url": f"https://leetcode.com/problems/{slug}/",
-        "source": "LeetCode",
-        "retrieved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    }
-
-
-async def _fetch_from_community_mirror(
-    client: httpx.AsyncClient, problem_number: int
-) -> dict[str, Any] | None:
-    """Fetch a public problem record from a community-maintained LeetCode mirror.
-
-    This is deliberately a fallback provider: it is not operated by LeetCode and
-    may be unavailable or change its response format without notice.
-    """
-    url = f"https://leetcode-api-pied.vercel.app/problem/{problem_number}"
-    try:
-        response = await client.get(
+        response = client.get(
             url,
             headers={
                 "Accept": "application/json",
                 "User-Agent": "Mozilla/5.0 (compatible; Didactics/1.0)",
             },
         )
-        if response.status_code == 404:
-            return None
-        if response.status_code == 429:
-            raise ProblemRateLimited()
         response.raise_for_status()
-        raw = response.json()
-        if not isinstance(raw, dict):
-            return None
 
-        canonical_url = str(raw.get("url") or "").strip()
-        slug = str(raw.get("titleSlug") or "").strip()
-        if not slug and "/problems/" in canonical_url:
-            slug = canonical_url.split("/problems/", 1)[1].strip("/").split("/", 1)[0]
-        if not slug or not raw.get("title") or not raw.get("content"):
-            return None
+        data = response.json()
 
-        question = {
-            "questionId": raw.get("questionId") or raw.get("questionFrontendId") or problem_number,
-            "title": raw.get("title"),
-            "titleSlug": slug,
-            "content": raw.get("content"),
-            "difficulty": raw.get("difficulty"),
-            "isPaidOnly": raw.get("isPaidOnly", False),
-            "topicTags": raw.get("topicTags") or [],
-            "sampleTestCase": raw.get("sampleTestCase") or "",
-            "metaData": raw.get("metaData") or "{}",
-            "stats": raw.get("stats") or "{}",
-        }
-        normalized = normalize_question(problem_number, question)
-        if not normalized["statement_text"]:
-            return None
-        normalized["source"] = "LeetCode (community mirror)"
-        normalized["source_provider"] = "leetcode-api-pied"
-        return normalized
-    except ProblemRateLimited:
-        raise
-    except (httpx.HTTPError, ValueError, TypeError, KeyError):
-        return None
-
-
-async def fetch_problem(problem_number: int) -> dict[str, Any]:
-    cached = _cache.get(problem_number)
-    if cached and cached[0] > time.monotonic():
-        return cached[1]
-
-    # LeetCode operates separate public hosts. Try the primary .com host first,
-    # then the .cn host when the primary host is blocked or unavailable.
-    sources = [
-        ("https://leetcode.com/api/problems/all/", "https://leetcode.com/graphql", "https://leetcode.com/"),
-        ("https://leetcode.cn/api/problems/all/", "https://leetcode.cn/graphql", "https://leetcode.cn/"),
-    ]
-    last_error = "LeetCode did not return a usable problem response."
-    valid_index_seen = False
-    slug = None
-    payload = None
-
-    try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(25.0, connect=10.0),
-            follow_redirects=True,
-        ) as client:
-            # First try a community-maintained REST mirror. This avoids relying
-            # exclusively on LeetCode's undocumented index + GraphQL endpoints.
-            mirrored = await _fetch_from_community_mirror(client, problem_number)
-            if mirrored:
-                _cache[problem_number] = (
-                    time.monotonic() + CACHE_TTL_SECONDS, mirrored
-                )
-                return mirrored
-
-            for index_url, graphql_url, origin in sources:
-                headers = {
-                    "User-Agent": (
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/130.0.0.0 Safari/537.36"
-                    ),
-                    "Accept": "application/json, text/plain, */*",
-                    "Content-Type": "application/json",
-                    "Origin": origin.rstrip("/"),
-                    "Referer": origin,
-                }
-                try:
-                    index_response = await client.get(index_url, headers=headers)
-                    if index_response.status_code == 429:
-                        raise ProblemRateLimited()
-                    if index_response.status_code in {401, 403} or index_response.status_code >= 500:
-                        last_error = (
-                            f"LeetCode problem index at {index_url} returned "
-                            f"HTTP {index_response.status_code}."
-                        )
-                        continue
-                    index_response.raise_for_status()
-                    index = index_response.json()
-                    if not isinstance(index, dict) or not isinstance(index.get("stat_status_pairs"), list):
-                        last_error = f"LeetCode returned an unexpected problem-index format from {index_url}."
-                        continue
-                    valid_index_seen = True
-                    slug = _resolve_slug(index, problem_number)
-                    if not slug:
-                        continue
-
-                    details_response = await client.post(
-                        graphql_url,
-                        json={
-                            "operationName": "questionData",
-                            "query": QUESTION_QUERY,
-                            "variables": {"titleSlug": slug},
-                        },
-                        headers=headers,
-                    )
-                    if details_response.status_code == 429:
-                        raise ProblemRateLimited()
-                    if details_response.status_code in {401, 403} or details_response.status_code >= 500:
-                        last_error = (
-                            f"LeetCode problem details at {graphql_url} returned "
-                            f"HTTP {details_response.status_code}."
-                        )
-                        payload = None
-                        continue
-                    details_response.raise_for_status()
-                    payload = details_response.json()
-                    if not isinstance(payload, dict):
-                        last_error = f"LeetCode returned an unexpected GraphQL response from {graphql_url}."
-                        payload = None
-                        continue
-                    question = (payload.get("data") or {}).get("question")
-                    if question:
-                        break
-                    if payload.get("errors"):
-                        last_error = f"LeetCode GraphQL error: {payload['errors'][0].get('message', 'unknown error')}"
-                    else:
-                        last_error = "LeetCode returned no question details."
-                    payload = None
-                except ProblemRateLimited:
-                    raise
-                except httpx.HTTPStatusError as exc:
-                    last_error = (
-                        f"LeetCode request to {exc.request.url} returned "
-                        f"HTTP {exc.response.status_code}."
-                    )
-                except (httpx.HTTPError, ValueError, TypeError) as exc:
-                    last_error = f"Could not retrieve data from {origin}: {type(exc).__name__}: {exc}"
-
-    except ProblemRateLimited:
-        raise
-    except (httpx.HTTPError, ValueError, TypeError) as exc:
-        raise ProblemSourceUnavailable(
-            f"Could not connect to LeetCode. Check your internet connection or network restrictions. ({type(exc).__name__})"
-        ) from exc
-
-    if not valid_index_seen:
-        raise ProblemSourceUnavailable(last_error)
-    if not slug:
-        raise ProblemNotFound()
-    if not payload:
-        raise ProblemSourceUnavailable(last_error)
-
-    question = (payload.get("data") or {}).get("question")
-    if not question:
-        raise ProblemNotFound()
-    if question.get("isPaidOnly") and not question.get("content"):
-        raise PremiumProblem()
-
-    normalized = normalize_question(problem_number, question)
-    if not normalized["statement_text"]:
-        raise ProblemSourceUnavailable("LeetCode returned an empty problem statement.")
-    _cache[problem_number] = (time.monotonic() + CACHE_TTL_SECONDS, normalized)
-    return normalized
+        return {
+                "name": data.get("title"),
+                "difficulty": data.get("difficulty"),
+                "description": get_description(data),
+                "examples": get_examples(data),
+                "constraints": get_constraints(data),
+                "similar_questions": get_similar_questions(data),
+                "topics": get_topics(data),
+                "hints": get_hints(data),
+                "code_template": get_code_template(data, language),
+            }

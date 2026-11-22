@@ -1,4 +1,25 @@
-The run for llm_info.py gives this output 
+```python 
+
+from backend.app.services.llm_info import CheckModel, CheckUsage
+
+# 1. Fetch available platforms models
+CheckModel.groq_model_check()
+CheckModel.gemini_model_check()
+
+# 2. Check rate limits and active day capacity for Groq (using active model)
+CheckUsage.groq_rate_limits("openai/gpt-oss-20b")
+    
+# 3. Check structural parameters for Gemini (using gemini-3.8-flash)
+CheckUsage.gemini_context_limits("gemini-3.8-flash")
+    
+# 4. Calculate text usage weight before running operations
+CheckUsage.gemini_count_tokens("How many credits does this sentence take?", "gemini-3.8-flash")
+
+CheckUsage.groq_rate_limits()
+
+```
+
+The run for llm_info.py gives this output for a given API Key
 
 --- Available Groq Models ---
 - qwen/qwen3.8-27b
@@ -73,6 +94,7 @@ The run for llm_info.py gives this output
 - models/gemini-robotics-er-2-streaming-preview (Supported actions: ['bidiGenerateContent'])
 - models/gemini-3.5-live-translate-preview (Supported actions: ['bidiGenerateContent'])
 - models/lyria-realtime-exp (Supported actions: ['bidiGenerateMusic'])
+
 --- Groq Rate Limits & Usage Status ---
 - Remaining Requests today (RPD): 999
 - Remaining Tokens this minute (TPM): 7680
