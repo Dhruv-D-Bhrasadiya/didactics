@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # Model Selection Defaults
     default_provider: str = "gemini"
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash"
     groq_model: str = "qwen/qwen3.8-27b"
     openai_model: str = "gpt-4o-mini"
 
