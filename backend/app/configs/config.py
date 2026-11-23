@@ -1,5 +1,5 @@
 from functools import lru_cache
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -12,7 +12,10 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
 
     # Model Selection Defaults
-    default_provider: str = "gemini"
+    default_provider: str = "google_genai"
+    providers: list[str] = Field(
+        default_factory=lambda: ["google_genai", "groq", "openai"]
+    )
     gemini_model: str = "gemini-3.5-flash"
     groq_model: str = "qwen/qwen3.8-27b"
     openai_model: str = "gpt-4o-mini"
