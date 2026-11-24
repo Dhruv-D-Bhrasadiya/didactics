@@ -1,20 +1,17 @@
-import re
-import json
 import html
+import json
+import re
+from typing import Any
+
 import httpx
 from bs4 import BeautifulSoup
 
 
 LANGUAGE_ALIASES = {
     "python": "python3",
-    "py": "python3",
-    "python3": "python3",
-    "python2": "python",
     "java": "java",
     "c": "c",
     "c++": "cpp",
-    "cpp": "cpp",
-    "js": "javascript",
     "javascript": "javascript",
 }
 
@@ -28,8 +25,7 @@ INDENT_WIDTHS = {
 }
 
 
-def get_description(data: dict) -> str:
-
+def get_description(data: dict[str, Any]) -> str:
     content = data.get("content", "")
     soup = BeautifulSoup(content, "html.parser")
     paragraphs = []
@@ -54,11 +50,10 @@ def get_description(data: dict) -> str:
     return " ".join(paragraphs)
 
 
-def get_examples(data: dict) -> list:
-
+def get_examples(data: dict[str, Any]) -> list[dict[str, Any]]:
     content = data.get("content", "")
     soup = BeautifulSoup(content, "html.parser")
-    examples = []
+    examples: list[dict[str, Any]] = []
 
     for heading in soup.find_all(["strong", "b"]):
         heading_text = heading.get_text(" ", strip=True)
@@ -69,7 +64,7 @@ def get_examples(data: dict) -> list:
         if not parent:
             continue
 
-        image = None
+        image: str | None = None
         input_value = ""
         output_value = ""
         explanation = ""
@@ -90,7 +85,7 @@ def get_examples(data: dict) -> list:
             if element.name == "pre":
                 pre_text = element.get_text("\n", strip=True)
 
-                def extract(pattern, next_pattern):
+                def extract(pattern: str, next_pattern: str) -> str:
                     match = re.search(
                         rf"{pattern}\s*:\s*(.*?)(?={next_pattern}\s*:|$)",
                         pre_text,
@@ -103,23 +98,24 @@ def get_examples(data: dict) -> list:
                 explanation = extract("Explanation", r"$^")
                 break
 
-        examples.append({
-            "example_number": len(examples) + 1,
-            "input": input_value,
-            "output": output_value,
-            "explanation": explanation,
-            "image": image,
-        })
+        examples.append(
+            {
+                "example_number": len(examples) + 1,
+                "input": input_value,
+                "output": output_value,
+                "explanation": explanation,
+                "image": image,
+            }
+        )
 
     return examples
 
 
-def get_constraints(data: dict) -> list:
-
+def get_constraints(data: dict[str, Any]) -> list[str]:
     content = data.get("content", "")
     soup = BeautifulSoup(content, "html.parser")
 
-    constraints = []
+    constraints: list[str] = []
 
     for tag in soup.find_all(["strong", "b"]):
         if re.match(r"Constraints?\s*:?", tag.get_text(strip=True), re.I):
@@ -141,7 +137,7 @@ def get_constraints(data: dict) -> list:
     return constraints
 
 
-def get_similar_questions(data: dict) -> list:
+def get_similar_questions(data: dict[str, Any]) -> list[dict[str, Any]]:
 
     similar = data.get("similarQuestions", [])
 
@@ -155,15 +151,14 @@ def get_similar_questions(data: dict) -> list:
         {
             "name": question.get("title"),
             "slug": question.get("titleSlug"),
-            "difficulty": question.get("difficulty")
+            "difficulty": question.get("difficulty"),
         }
         for question in similar
         if isinstance(question, dict)
     ]
 
 
-def get_topics(data: dict) -> list:
-
+def get_topics(data: dict[str, Any]) -> list[str]:
     return [
         tag["name"]
         for tag in data.get("topicTags", [])
@@ -171,14 +166,15 @@ def get_topics(data: dict) -> list:
     ]
 
 
-def get_hints(data: dict) -> list:
-
+def get_hints(data: dict[str, Any]) -> list[str]:
     return data.get("hints", [])
 
 
 def _convert_indentation_to_tabs(code: str, space_width: int = 4) -> str:
     if not code:
         return ""
+    if space_width < 1:
+        raise ValueError("space_width must be a positive integer.")
 
     converted_lines = []
     for line in code.splitlines():
@@ -197,15 +193,23 @@ def _convert_indentation_to_tabs(code: str, space_width: int = 4) -> str:
     return "\n".join(converted_lines)
 
 
-def get_code_template(data: dict, language: str) -> dict | None:
+def get_code_template(data: dict[str, Any], language: str) -> dict[str, Any] | None:
     normalized = language.lower().strip()
     target_slug = LANGUAGE_ALIASES.get(normalized, normalized)
 
     for snippet in data.get("codeSnippets", []):
-        slug = snippet.get("langSlug", "").lower()
+        if not isinstance(snippet, dict):
+            continue
+        language_slug = snippet.get("langSlug", "")
+        if not isinstance(language_slug, str):
+            continue
+        slug = language_slug.lower()
         if slug == target_slug:
             space_width = INDENT_WIDTHS.get(slug, 4)
-            formatted_code = _convert_indentation_to_tabs(snippet.get("code", ""), space_width)
+            code = snippet.get("code", "")
+            if not isinstance(code, str):
+                raise ValueError("LeetCode source returned a non-text code template.")
+            formatted_code = _convert_indentation_to_tabs(code, space_width)
 
             return {
                 "language": snippet.get("lang"),
@@ -216,9 +220,11 @@ def get_code_template(data: dict, language: str) -> dict | None:
     return None
 
 
-def fetch_problem(problem_number: int, language: str = "java") -> dict:
-    if not isinstance(problem_number, int) or problem_number < 1:
-        raise ValueError("Problem number must be a positive integer and in range with leetcodes question numbers.")
+def fetch_problem(problem_number: int, language: str = "java") -> dict[str, Any]:
+    if type(problem_number) is not int or problem_number < 1:
+        raise ValueError(
+            "Problem number must be a positive integer within LeetCode's question range."
+        )
 
     with httpx.Client(timeout=25.0, follow_redirects=True) as client:
         url = f"https://leetcode-api-pied.vercel.app/problem/{problem_number}"
@@ -233,15 +239,17 @@ def fetch_problem(problem_number: int, language: str = "java") -> dict:
         response.raise_for_status()
 
         data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("LeetCode source returned an invalid problem payload.")
 
         return {
-                "name": data.get("title"),
-                "difficulty": data.get("difficulty"),
-                "description": get_description(data),
-                "examples": get_examples(data),
-                "constraints": get_constraints(data),
-                "similar_questions": get_similar_questions(data),
-                "topics": get_topics(data),
-                "hints": get_hints(data),
-                "code_template": get_code_template(data, language),
-            }
+            "name": data.get("title"),
+            "difficulty": data.get("difficulty"),
+            "description": get_description(data),
+            "examples": get_examples(data),
+            "constraints": get_constraints(data),
+            "similar_questions": get_similar_questions(data),
+            "topics": get_topics(data),
+            "hints": get_hints(data),
+            "code_template": get_code_template(data, language),
+        }
