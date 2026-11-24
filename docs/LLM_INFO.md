@@ -1,6 +1,6 @@
 ```python 
 
-from backend.app.services.llm_info import CheckModel, CheckUsage
+from backend.scripts.llm_diagnostics import CheckModel, CheckUsage
 
 # 1. Fetch available platforms models
 CheckModel.groq_model_check()
