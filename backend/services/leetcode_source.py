@@ -1,12 +1,21 @@
 import html
 import json
 import re
+import os
+from pathlib import Path
 from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup
 
-
+PATH = Path("output")
+if not PATH:
+    os.mkdir(PATH)
+    print("Output Directory does not exits")
+    print("Creating directory")
+else:
+    print("Output Directory exits")
+    
 LANGUAGE_ALIASES = {
     "python": "python3",
     "java": "java",
@@ -24,6 +33,14 @@ INDENT_WIDTHS = {
     "javascript": 4,  # Change to 2 if your source snippets use 2-space JS
 }
 
+LANGUAGE_EXTENSIONS = {
+    "python3": ".py",
+    "python": ".py",
+    "java": ".java",
+    "c": ".c",
+    "cpp": ".cpp",
+    "javascript": ".js",
+}
 
 def get_description(data: dict[str, Any]) -> str:
     content = data.get("content", "")
@@ -193,7 +210,11 @@ def _convert_indentation_to_tabs(code: str, space_width: int = 4) -> str:
     return "\n".join(converted_lines)
 
 
-def get_code_template(data: dict[str, Any], language: str) -> dict[str, Any] | None:
+def get_code_template(
+    data: dict[str, Any],
+    language: str,
+    save_dir: str | Path | None = None,
+) -> dict[str, Any] | None:
     normalized = language.lower().strip()
     target_slug = LANGUAGE_ALIASES.get(normalized, normalized)
 
@@ -203,32 +224,131 @@ def get_code_template(data: dict[str, Any], language: str) -> dict[str, Any] | N
         language_slug = snippet.get("langSlug", "")
         if not isinstance(language_slug, str):
             continue
+
         slug = language_slug.lower()
         if slug == target_slug:
             space_width = INDENT_WIDTHS.get(slug, 4)
             code = snippet.get("code", "")
             if not isinstance(code, str):
                 raise ValueError("LeetCode source returned a non-text code template.")
+
             formatted_code = _convert_indentation_to_tabs(code, space_width)
+            saved_path: str | None = None
+
+            if save_dir is not None:
+                directory = Path(save_dir)
+                directory.mkdir(parents=True, exist_ok=True)
+
+                # Build filename using problem ID & slug (e.g., 0001_two_sum.java)
+                problem_id = str(data.get("questionFrontendId", "problem")).zfill(4)
+                title_slug = data.get("titleSlug", "solution").replace("-", "_")
+                ext = LANGUAGE_EXTENSIONS.get(slug, f".{slug}")
+
+                file_path = directory / f"{problem_id}_{title_slug}{ext}"
+                file_path.write_text(formatted_code + "\n", encoding="utf-8")
+                saved_path = str(file_path)
 
             return {
                 "language": snippet.get("lang"),
                 "language_slug": snippet.get("langSlug"),
                 "code": formatted_code,
+                "saved_path": saved_path,
             }
-
     return None
 
 
-def fetch_problem(problem_number: int, language: str = "java") -> dict[str, Any]:
+def save_problem_markdown(
+    problem_data: dict[str, Any],
+    raw_data: dict[str, Any],
+    save_dir: str | Path,
+) -> str:
+    directory = Path(save_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+
+    problem_id = str(raw_data.get("questionFrontendId", "problem")).zfill(4)
+    title_slug = raw_data.get("titleSlug", "problem").replace("-", "_")
+    md_path = directory / f"{problem_id}_{title_slug}.md"
+
+    lines: list[str] = []
+
+    # 1. Name & Difficulty
+    name = problem_data.get("name") or "Untitled Problem"
+    difficulty = problem_data.get("difficulty") or "Unknown"
+    lines.append(f"# {raw_data.get('questionFrontendId', '')}. {name}".strip())
+    lines.append(f"\n**Difficulty:** {difficulty}\n")
+
+    # 2. Description
+    lines.append("## Description\n")
+    lines.append(f"{problem_data.get('description', '')}\n")
+
+    # 3. Examples
+    examples = problem_data.get("examples", [])
+    if examples:
+        lines.append("## Examples\n")
+        for ex in examples:
+            lines.append(f"### Example {ex['example_number']}\n")
+            if ex.get("image"):
+                lines.append(f"![Example {ex['example_number']}]({ex['image']})\n")
+            lines.append("```text")
+            lines.append(f"Input: {ex.get('input', '')}")
+            lines.append(f"Output: {ex.get('output', '')}")
+            if ex.get("explanation"):
+                lines.append(f"Explanation: {ex['explanation']}")
+            lines.append("```\n")
+
+    # 4. Constraints
+    constraints = problem_data.get("constraints", [])
+    if constraints:
+        lines.append("## Constraints\n")
+        for item in constraints:
+            lines.append(f"- `{item}`")
+        lines.append("")
+
+    # 5. Similar Questions
+    similar = problem_data.get("similar_questions", [])
+    if similar:
+        lines.append("## Similar Questions\n")
+        for q in similar:
+            q_name = q.get("name", "")
+            q_slug = q.get("slug", "")
+            q_diff = q.get("difficulty", "")
+            url = f"https://leetcode.com{q_slug}/" if q_slug else ""
+            if url:
+                lines.append(f"- [{q_name}]({url}) ({q_diff})")
+            else:
+                lines.append(f"- {q_name} ({q_diff})")
+        lines.append("")
+
+    # 6. Topics
+    topics = problem_data.get("topics", [])
+    if topics:
+        lines.append("## Topics\n")
+        lines.append(", ".join(f"`{t}`" for t in topics) + "\n")
+
+    # 7. Hints
+    hints = problem_data.get("hints", [])
+    if hints:
+        lines.append("## Hints\n")
+        for idx, hint in enumerate(hints, start=1):
+            clean_hint = BeautifulSoup(hint, "html.parser").get_text(" ", strip=True)
+            lines.append(f"### Hint {idx}\n")
+            lines.append(f"{clean_hint}\n")
+
+    md_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+    return str(md_path)
+
+
+def fetch_problem(
+    problem_number: int,
+    language: str = "java",
+    save_dir: str | Path | None = None,
+) -> dict[str, Any]:
     if type(problem_number) is not int or problem_number < 1:
         raise ValueError(
             "Problem number must be a positive integer within LeetCode's question range."
         )
-
     with httpx.Client(timeout=25.0, follow_redirects=True) as client:
         url = f"https://leetcode-api-pied.vercel.app/problem/{problem_number}"
-
         response = client.get(
             url,
             headers={
@@ -237,12 +357,11 @@ def fetch_problem(problem_number: int, language: str = "java") -> dict[str, Any]
             },
         )
         response.raise_for_status()
-
         data = response.json()
         if not isinstance(data, dict):
             raise ValueError("LeetCode source returned an invalid problem payload.")
 
-        return {
+        result = {
             "name": data.get("title"),
             "difficulty": data.get("difficulty"),
             "description": get_description(data),
@@ -251,5 +370,11 @@ def fetch_problem(problem_number: int, language: str = "java") -> dict[str, Any]
             "similar_questions": get_similar_questions(data),
             "topics": get_topics(data),
             "hints": get_hints(data),
-            "code_template": get_code_template(data, language),
+            "code_template": get_code_template(data, language, save_dir=save_dir),
+            "markdown_path": None,
         }
+
+        if save_dir is not None:
+            result["markdown_path"] = save_problem_markdown(result, data, save_dir)
+
+        return result

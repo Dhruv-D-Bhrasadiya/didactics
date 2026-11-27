@@ -1,17 +1,22 @@
-import json
+import os
+from pathlib import Path
+from services.leetcode_source import fetch_problem
+from agents.solver_agent import SolverAgent
+from agents.explainer_agent import ExplainerAgent
 
-from dotenv import load_dotenv
-from app.agents.solver_agent import SolutionAgent
-from app.services.leetcode_source import fetch_problem
+result = fetch_problem(1, "python")
+print(result)
 
-load_dotenv() 
+solver_agent = SolverAgent()
+solver_agent_response = str(solver_agent.run(str(result)))
+print(solver_agent_response)
 
-problem = fetch_problem(1352, "java")
-print(problem)
+explainer_agent = ExplainerAgent()
+explainer_agent_response = explainer_agent.run(solver_agent_response)
+print(explainer_agent_response)
 
-# Convert the problem dictionary to a string representation for the agent
-problem_str = json.dumps(problem, indent=2)
+output_path = Path("output/explainer_output.md")
+output_path.parent.mkdir(parents=True, exist_ok=True)
 
-a1 = SolutionAgent()
-response = a1.run(problem_str)
-print(response)
+with open("output/explainer_output.md", "w") as f:
+    f.write(str(explainer_agent_response))

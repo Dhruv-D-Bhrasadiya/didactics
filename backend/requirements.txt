@@ -1,11 +1,6 @@
-groq
-httpx
-pytest
 google-genai
 pydantic-settings
 beautifulsoup4
 PyYAML
 langchain
 langchain-google-genai
-langchain-groq
-langchain-openai
